@@ -8,15 +8,64 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci
+    
+    - name: Build project
+      run: npm run build
+    
     - name: Deploy to Windows Server
-      uses: appleboy/ssh-action@v0.1.5
+      uses: appleboy/ssh-action@v1.0.0
       with:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SERVER_USERNAME }}
         password: ${{ secrets.SERVER_PASSWORD }}
+        port: ${{ secrets.SERVER_PORT || '22' }}
         script: |
-          cd C:\path\to\your\nodejs-project
+          @echo off
+          echo 开始部署...
+          
+          REM 进入项目目录
+          cd /d C:\Users\Administrator\miniapp-express-api || exit /b 1
+          
+          REM 拉取最新代码
+          echo 拉取最新代码...
           git pull origin main
-          npm install
-          nssm restart MyNodeApp
+          
+          REM 安装依赖
+          echo 安装依赖...
+          call npm ci --production
+          
+          REM 生成 Prisma Client
+          echo 生成 Prisma Client...
+          call npx prisma generate
+          
+          REM 执行数据库迁移
+          echo 执行数据库迁移...
+          call npx prisma migrate deploy
+          
+          REM 构建项目
+          echo 构建项目...
+          call npm run build
+          
+          REM 使用 PM2 重启应用
+          echo 重启应用...
+          pm2 list | findstr "miniapp-api" >nul
+          if %errorlevel% equ 0 (
+            call pm2 reload miniapp-api --update-env
+          ) else (
+            call pm2 start dist\server.js --name miniapp-api
+          )
+          
+          REM 保存 PM2 配置
+          call pm2 save
+          
+          echo 部署完成！
