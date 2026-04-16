@@ -2,7 +2,8 @@ name: Deploy to Windows Server
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -33,12 +34,31 @@ jobs:
           @echo off
           echo 开始部署...
           
+          REM 设置项目目录（从环境变量读取，默认为 Administrator 用户目录）
+          set "PROJECT_DIR=${{ secrets.PROJECT_DIR || 'C:\Users\Administrator\miniapp-express-api' }}"
+          echo 项目目录: %PROJECT_DIR%
+          
+          REM 检查目录是否存在，如果不存在则创建
+          if not exist "%PROJECT_DIR%" (
+            echo 创建项目目录...
+            mkdir "%PROJECT_DIR%"
+          )
+          
           REM 进入项目目录
-          cd /d C:\Users\Administrator\miniapp-express-api || exit /b 1
+          cd /d "%PROJECT_DIR%" || exit /b 1
+          
+          REM 检查是否为 git 仓库，如果不是则克隆
+          if not exist ".git" (
+            echo 初始化 git 仓库...
+            git clone https://github.com/${{ github.repository }}.git temp_repo
+            xcopy temp_repo\* . /E /I /Y
+            rmdir /S /Q temp_repo
+          )
           
           REM 拉取最新代码
           echo 拉取最新代码...
-          git pull origin main
+          git fetch origin
+          git reset --hard origin/main
           
           REM 安装依赖
           echo 安装依赖...

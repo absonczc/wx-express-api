@@ -234,14 +234,17 @@ nssm start Nginx
 
 ## 4. 配置 GitHub Secrets
 
-在 GitHub 仓库的 Settings → Secrets and variables → Actions 中添加以下 secrets：
+在 GitHub 仓库的 Settings -> Secrets and variables -> Actions 中添加以下 Secrets：
 
-| Secret Name | 说明 | 示例 |
+| Secret 名称 | 说明 | 示例 |
 |------------|------|------|
-| `SERVER_IP` | 服务器 IP 地址 | `119.29.94.128` |
+| `SERVER_IP` | 服务器 IP 地址 | `123.45.67.89` |
 | `SERVER_USERNAME` | 服务器用户名 | `Administrator` |
-| `SERVER_PASSWORD` | 服务器密码 | `YourPassword123` |
-| `SERVER_PORT` | SSH 端口（可选） | `22` 或 `3389` |
+| `SERVER_PASSWORD` | 服务器密码 | `your-password` |
+| `SERVER_PORT` | SSH 端口（可选） | `22` |
+| `PROJECT_DIR` | 项目目录路径（可选） | `C:\Users\Administrator\miniapp-express-api` |
+
+**注意：** 如果服务器上的实际路径不是默认的 `C:\Users\Administrator\miniapp-express-api`，请设置 `PROJECT_DIR` 环境变量。
 
 ### 4.1 Windows Server 启用 SSH（如果未启用）
 
