@@ -25,17 +25,20 @@ jobs:
     
     - name: Deploy to Windows Server
       uses: appleboy/ssh-action@v1.0.0
+      env:
+        PROJECT_DIR: ${{ secrets.PROJECT_DIR || 'C:\Users\Administrator\miniapp-express-api' }}
+        REPO_URL: ${{ github.repository }}
       with:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SERVER_USERNAME }}
         password: ${{ secrets.SERVER_PASSWORD }}
         port: ${{ secrets.SERVER_PORT || '22' }}
+        envs: PROJECT_DIR,REPO_URL
         script: |
           @echo off
           echo 开始部署...
           
-          REM 设置项目目录（从环境变量读取，默认为 Administrator 用户目录）
-          set "PROJECT_DIR=${{ secrets.PROJECT_DIR || 'C:\Users\Administrator\miniapp-express-api' }}"
+          REM 使用从 GitHub Actions 传递的环境变量
           echo 项目目录: %PROJECT_DIR%
           
           REM 检查目录是否存在，如果不存在则创建
@@ -50,7 +53,7 @@ jobs:
           REM 检查是否为 git 仓库，如果不是则克隆
           if not exist ".git" (
             echo 初始化 git 仓库...
-            git clone https://github.com/${{ github.repository }}.git temp_repo
+            git clone https://github.com/%REPO_URL%.git temp_repo
             xcopy temp_repo\* . /E /I /Y
             rmdir /S /Q temp_repo
           )
