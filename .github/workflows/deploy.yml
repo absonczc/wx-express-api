@@ -2,17 +2,21 @@ name: Deploy to Windows Server
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
+
+concurrency:
+  group: deploy-windows-server
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v4
     
     - name: Setup Node.js
-      uses: actions/setup-node@v5
+      uses: actions/setup-node@v4
       with:
         node-version: '20'
         cache: 'npm'
@@ -25,70 +29,60 @@ jobs:
     
     - name: Deploy to Windows Server
       uses: appleboy/ssh-action@v1.0.0
-      env:
-        PROJECT_DIR: ${{ secrets.PROJECT_DIR || 'C:\Users\Administrator\miniapp-express-api' }}
-        REPO_URL: ${{ github.repository }}
       with:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SERVER_USERNAME }}
         password: ${{ secrets.SERVER_PASSWORD }}
+        key: ${{ secrets.SERVER_SSH_KEY }}
+        passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
         port: ${{ secrets.SERVER_PORT || '22' }}
-        envs: PROJECT_DIR,REPO_URL
+        script_stop: true
+        command_timeout: 30m
         script: |
           @echo off
+          setlocal enabledelayedexpansion
           echo 开始部署...
           
-          REM 使用从 GitHub Actions 传递的环境变量
-          echo 项目目录: %PROJECT_DIR%
-          
-          REM 检查目录是否存在，如果不存在则创建
-          if not exist "%PROJECT_DIR%" (
-            echo 创建项目目录...
-            mkdir "%PROJECT_DIR%"
-          )
-          
           REM 进入项目目录
-          cd /d "%PROJECT_DIR%" || exit /b 1
-          
-          REM 检查是否为 git 仓库，如果不是则克隆
-          if not exist ".git" (
-            echo 初始化 git 仓库...
-            git clone https://github.com/%REPO_URL%.git temp_repo
-            xcopy temp_repo\* . /E /I /Y
-            rmdir /S /Q temp_repo
+          set PROJECT_DIR=${{ secrets.PROJECT_DIR }}
+          if "!PROJECT_DIR!"=="" set PROJECT_DIR=C:\apps\miniapp-express-api
+          if not exist "!PROJECT_DIR!" (
+            echo 项目目录不存在: !PROJECT_DIR!
+            exit /b 1
           )
+          cd /d "!PROJECT_DIR!" || exit /b 1
           
           REM 拉取最新代码
           echo 拉取最新代码...
-          git fetch origin
-          git reset --hard origin/main
+          git pull --ff-only origin main || exit /b 1
           
           REM 安装依赖
           echo 安装依赖...
-          call npm ci --production
+          call npm ci || exit /b 1
           
           REM 生成 Prisma Client
           echo 生成 Prisma Client...
-          call npx prisma generate
+          call npx prisma generate || exit /b 1
           
           REM 执行数据库迁移
           echo 执行数据库迁移...
-          call npx prisma migrate deploy
+          call npx prisma migrate deploy || exit /b 1
           
           REM 构建项目
           echo 构建项目...
-          call npm run build
+          call npm run build || exit /b 1
           
           REM 使用 PM2 重启应用
           echo 重启应用...
-          pm2 list | findstr "miniapp-api" >nul
-          if %errorlevel% equ 0 (
+          call pm2 describe miniapp-api >nul 2>&1
+          if !errorlevel! equ 0 (
             call pm2 reload miniapp-api --update-env
           ) else (
             call pm2 start dist\server.js --name miniapp-api
           )
+          if !errorlevel! neq 0 exit /b 1
           
           REM 保存 PM2 配置
-          call pm2 save
+          call pm2 save || exit /b 1
           
           echo 部署完成！
