@@ -37,54 +37,44 @@ jobs:
         script_stop: true
         command_timeout: 30m
         script: |
-          @echo off
-          setlocal enabledelayedexpansion
-          echo 开始部署...
-          
-          REM 进入项目目录
-          set PROJECT_DIR=${{ secrets.PROJECT_DIR }}
-          if "!PROJECT_DIR!"=="" set PROJECT_DIR=C:\apps\miniapp-express-api
-          if not exist "!PROJECT_DIR!" (
-            echo 项目目录不存在: !PROJECT_DIR!
-            exit /b 1
-          )
-          cd /d "!PROJECT_DIR!" || exit /b 1
-          if not exist package.json (
-            echo 当前目录缺少 package.json，请检查 PROJECT_DIR 或克隆路径是否正确
-            exit /b 1
-          )
-          
-          REM 拉取最新代码
-          echo 拉取最新代码...
-          git pull --ff-only origin main || exit /b 1
-          
-          REM 安装依赖
-          echo 安装依赖...
-          call npm ci || exit /b 1
-          
-          REM 生成 Prisma Client
-          echo 生成 Prisma Client...
-          call npx prisma generate || exit /b 1
-          
-          REM 执行数据库迁移
-          echo 执行数据库迁移...
-          call npx prisma migrate deploy || exit /b 1
-          
-          REM 构建项目
-          echo 构建项目...
-          call npm run build || exit /b 1
-          
-          REM 使用 PM2 重启应用
-          echo 重启应用...
-          call pm2 describe miniapp-api >nul 2>&1
-          if !errorlevel! equ 0 (
-            call pm2 reload miniapp-api --update-env
-          ) else (
-            call pm2 start dist\server.js --name miniapp-api
-          )
-          if !errorlevel! neq 0 exit /b 1
-          
-          REM 保存 PM2 配置
-          call pm2 save || exit /b 1
-          
-          echo 部署完成！
+          $ErrorActionPreference = 'Stop'
+          Write-Host '开始部署...'
+          $projectDir = "${{ secrets.PROJECT_DIR }}"
+          if ([string]::IsNullOrWhiteSpace($projectDir)) {
+            $projectDir = 'C:\apps\miniapp-express-api'
+          }
+          if (-not (Test-Path -LiteralPath $projectDir)) {
+            Write-Host "项目目录不存在: $projectDir"
+            exit 1
+          }
+          Set-Location -LiteralPath $projectDir
+          if (-not (Test-Path -LiteralPath '.\package.json')) {
+            Write-Host '当前目录缺少 package.json，请在 GitHub Secrets 设置 PROJECT_DIR（例如 C:\apps\miniapp-express-api\wx-express-api）'
+            exit 1
+          }
+          Write-Host '拉取最新代码...'
+          git pull --ff-only origin main
+          if (-not $?) { exit 1 }
+          Write-Host '安装依赖...'
+          npm ci
+          if (-not $?) { exit 1 }
+          Write-Host '生成 Prisma Client...'
+          npx prisma generate
+          if (-not $?) { exit 1 }
+          Write-Host '执行数据库迁移...'
+          npx prisma migrate deploy
+          if (-not $?) { exit 1 }
+          Write-Host '构建项目...'
+          npm run build
+          if (-not $?) { exit 1 }
+          Write-Host '重启应用...'
+          pm2 describe miniapp-api *> $null
+          if ($LASTEXITCODE -eq 0) {
+            pm2 reload miniapp-api --update-env
+          } else {
+            pm2 start dist\server.js --name miniapp-api
+          }
+          if (-not $?) { exit 1 }
+          pm2 save
+          if (-not $?) { exit 1 }
+          Write-Host '部署完成！'
