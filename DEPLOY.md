@@ -31,16 +31,42 @@ Windows Server
 
 **以管理员身份运行 PowerShell**，然后执行：
 
+#### 方法一：直接复制脚本内容（推荐）
+
+由于脚本需要从 GitHub 下载，如果下载失败，可以直接复制脚本内容到服务器：
+
+```powershell
+# 在本地打开脚本文件，复制全部内容
+# 然后在服务器上创建脚本文件
+notepad setup-server.ps1
+# 粘贴脚本内容并保存
+```
+
+然后执行：
 ```powershell
 # 设置执行策略（首次运行需要）
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
 
-# 下载并运行初始化脚本
+# 运行脚本
+.\setup-server.ps1
+```
+
+#### 方法二：从 GitHub 下载（如果网络畅通）
+
+```powershell
+# 设置执行策略（首次运行需要）
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+
+# 下载并运行初始化脚本（将 <your-username> 替换为你的 GitHub 用户名）
 Invoke-WebRequest -Uri "https://raw.githubusercontent.com/<your-username>/miniapp-express-api/main/scripts/setup-server.ps1" -OutFile "setup-server.ps1"
 .\setup-server.ps1
 ```
 
-### 1.3 手动初始化（如果脚本执行失败）
+**注意**：如果仓库是私有的，此方法会失败，请使用方法一。
+
+#### 方法三：手动执行初始化步骤
+
+如果脚本运行失败，可以手动执行以下步骤：
 
 #### 安装 Chocolatey
 
