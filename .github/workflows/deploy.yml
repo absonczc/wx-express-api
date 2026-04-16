@@ -33,8 +33,6 @@ jobs:
         host: ${{ secrets.SERVER_IP }}
         username: ${{ secrets.SERVER_USERNAME }}
         password: ${{ secrets.SERVER_PASSWORD }}
-        key: ${{ secrets.SERVER_SSH_KEY }}
-        passphrase: ${{ secrets.SERVER_SSH_PASSPHRASE }}
         port: ${{ secrets.SERVER_PORT || '22' }}
         script_stop: true
         command_timeout: 30m
@@ -51,6 +49,10 @@ jobs:
             exit /b 1
           )
           cd /d "!PROJECT_DIR!" || exit /b 1
+          if not exist package.json (
+            echo 当前目录缺少 package.json，请检查 PROJECT_DIR 或克隆路径是否正确
+            exit /b 1
+          )
           
           REM 拉取最新代码
           echo 拉取最新代码...
