@@ -191,7 +191,7 @@
 ```json
 {
   "prompt": "比赛1（match_id=1）：...",
-  "model": "gpt-5.4"
+  "model": "gpt-5.4-mini"
 }
 ```
 

@@ -1,6 +1,10 @@
 /**
  * 足/篮预测：从懂球帝 tab 原始体筛选「北京时间今天、明天、且未开赛」的场次，拼成模型 user 消息（JSON 数组字符串）。
+ * 按开赛时间升序后最多取前 {@link MAX_PREDICTION_PROMPT_MATCHES} 场，避免列表过长拖垮大模型请求。
  */
+
+/** 自动拼 prompt 时纳入的最大场次数（足球/篮球共用） */
+export const MAX_PREDICTION_PROMPT_MATCHES = 30;
 
 export type PredictionMatchPromptItem = {
   home: string;
@@ -120,7 +124,7 @@ function buildItemsFromList(matchList: unknown[]): PredictionMatchPromptItem[] {
   }
 
   rows.sort((a, b) => a.ts - b.ts);
-  return rows.map((r) => r.item);
+  return rows.slice(0, MAX_PREDICTION_PROMPT_MATCHES).map((r) => r.item);
 }
 
 /** 足球：懂球帝 `data/tab/new/soccer` 原始体 */

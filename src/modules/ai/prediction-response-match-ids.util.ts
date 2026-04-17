@@ -3,7 +3,7 @@
  * 并把模型返回的 matches 与请求对齐（match_id 强制为请求里的原样字符串；顺序与请求一致）。
  */
 
-function idEquals(a: unknown, b: string): boolean {
+export function idEquals(a: unknown, b: string): boolean {
   if (a === undefined || a === null) return false;
   const sa = String(a).trim();
   const sb = b.trim();

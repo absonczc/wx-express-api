@@ -673,7 +673,7 @@ const options: swaggerJsdoc.Options = {
             prompt: {
               type: "string",
               description:
-                "比赛信息（可选）。不传或空字符串时服务端从懂球帝拉取赛程并自动生成 JSON 数组字符串：筛选「北京时间今天、明天、且未开赛」的场次，字段 home、away、time（北京时间）、match_id。",
+                "比赛信息（可选）。不传或空字符串时服务端从懂球帝拉取赛程并自动生成 JSON 数组字符串：筛选「北京时间今天、明天、且未开赛」的场次，按开赛时间升序**最多取 30 场**，字段 home、away、time（北京时间）、match_id。",
               example:
                 '[{"home":"吉达国民","away":"柔佛新山","time":"2026-04-17 22:45:00","match_id":"54440340"}]',
             },
@@ -684,7 +684,7 @@ const options: swaggerJsdoc.Options = {
             model: {
               type: "string",
               description:
-                "HTTP 预测接口只读库，**忽略**该字段（定时任务写入时使用 `PREDICTION_VECTOR_ENGINE_MODEL`，默认 gpt-5.4）",
+                "HTTP 预测接口只读库，**忽略**该字段（定时任务写入时使用 `PREDICTION_VECTOR_ENGINE_MODEL`，默认 gpt-5.4-mini）",
             },
           },
         },
@@ -694,7 +694,7 @@ const options: swaggerJsdoc.Options = {
             ok: { type: "boolean", example: true },
             cached: {
               type: "boolean",
-              description: "恒为 true：内容来自 `FootballPredictionCache` 中该 `prompt` 的 `createdAt` 最新一条",
+              description: "恒为 true：内容来自 `FootballPredictionCache` 中该请求 `prompt`（与库内 `promptHash`/全文一致）的 `createdAt` 最新一条",
               example: true,
             },
             cacheCreatedAt: {
@@ -715,7 +715,7 @@ const options: swaggerJsdoc.Options = {
             prompt: {
               type: "string",
               description:
-                "比赛信息（可选）。不传或空字符串时服务端从懂球帝篮球 tab 拉取赛程并自动生成与足球接口一致的 JSON 数组字符串（今天、明天、未开赛）。",
+                "比赛信息（可选）。不传或空字符串时服务端从懂球帝篮球 tab 拉取赛程并自动生成与足球接口一致的 JSON 数组字符串（今天、明天、未开赛，按开赛时间升序**最多 30 场**）。",
               example:
                 '[{"home":"湖人","away":"勇士","time":"2026-04-17 10:30:00","match_id":"54439749"}]',
             },
@@ -735,7 +735,7 @@ const options: swaggerJsdoc.Options = {
             ok: { type: "boolean", example: true },
             cached: {
               type: "boolean",
-              description: "恒为 true：内容来自 `BasketballPredictionCache` 中该 `prompt` 的 `createdAt` 最新一条",
+              description: "恒为 true：内容来自 `BasketballPredictionCache` 中该请求 `prompt`（与库内 `promptHash`/全文一致）的 `createdAt` 最新一条",
               example: true,
             },
             cacheCreatedAt: {

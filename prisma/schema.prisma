@@ -20,23 +20,27 @@ model User {
 }
 
 model FootballPredictionCache {
-  id        String   @id @default(cuid())
-  prompt    String
-  result    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  prompt     String
+  /// 与 `md5(prompt)`（UTF-8）一致，供 B-tree 索引；`prompt` 仍存全文用于业务与模糊匹配
+  promptHash String
+  result     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  @@index([prompt])
+  @@index([promptHash])
   @@index([createdAt])
 }
 
 model BasketballPredictionCache {
-  id        String   @id @default(cuid())
-  prompt    String
-  result    String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  prompt     String
+  /// 与 `md5(prompt)`（UTF-8）一致，供 B-tree 索引；`prompt` 仍存全文用于业务与模糊匹配
+  promptHash String
+  result     String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  @@index([prompt])
+  @@index([promptHash])
   @@index([createdAt])
 }

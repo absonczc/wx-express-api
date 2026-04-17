@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { isProd } from "../config/env.js";
+import { env, isProd } from "../config/env.js";
 import { logger } from "./logger.js";
 
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
@@ -7,6 +7,11 @@ const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
 export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
+    datasources: {
+      db: {
+        url: env.databaseUrl,
+      },
+    },
     log: isProd() ? ["error", "warn"] : ["query", "error", "warn"],
   });
 

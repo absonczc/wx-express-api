@@ -275,9 +275,9 @@ aiRouter.post("/travel-guide/jobs/:jobId/cancel", authRequired, asyncHandler(pos
  *   post:
  *     summary: 足球比分预测
  *     description: |
- *       自动拉取赛程时，用户消息为 JSON 数组字符串（home、away、time、match_id），筛选「北京时间今天、明天、且未开赛」的场次。
- *       **接口只读数据库**：按该 prompt 查询 `FootballPredictionCache` 中 **`createdAt` 最新一条** 返回（含 `cacheCreatedAt`）；**不在此路径调用模型**。无记录时 **404**。
- *       写入缓存由进程启动时及每 `PREDICTION_SCHEDULE_INTERVAL_MS`（默认 6 小时）的定时任务完成（须配置 `VECTOR_ENGINE_API_KEY`；模型名见 `PREDICTION_VECTOR_ENGINE_MODEL`，默认 gpt-5.4）。
+ *       自动拉取赛程时，用户消息为 JSON 数组字符串（home、away、time、match_id），筛选「北京时间今天、明天、且未开赛」的场次，**按开赛时间升序最多取 30 场**再拼 prompt（与定时预热写入逻辑一致，控制大模型上下文体积）。
+ *       **接口只读数据库**：优先按「`prompt` 全文 + 库内 `promptHash`（与 UTF-8 下 MD5 一致）」匹配 `FootballPredictionCache` 中 **`createdAt` 最新一条**（避免在超长 `prompt` 上建 B-tree 触发 PG 54000）；若无命中，则在近 48 小时内写入的记录中按 **match_id** 做兼容（请求 id 序列为某条缓存的有序前缀，或与某条缓存的 match_id 集合一致）。**不在此路径调用模型**。仍无可用记录时 **404**。
+ *       写入缓存由进程启动时及每 `PREDICTION_SCHEDULE_INTERVAL_MS`（默认 6 小时）的定时任务完成（须配置 `VECTOR_ENGINE_API_KEY`；模型名见 `PREDICTION_VECTOR_ENGINE_MODEL`，默认 gpt-5.4-mini）。
  *       响应中 `content.matches` 按本次 `prompt` 中 match_id 顺序整理（支持旧版「（match_id=…）」或 JSON 数组），且每条 `match_id` 与请求 prompt 一致。
  *     tags: [AI]
  *     security:
@@ -302,9 +302,9 @@ aiRouter.post("/football-prediction", authRequired, asyncHandler(postFootballPre
  *   post:
  *     summary: 篮球比分与盘路预测
  *     description: |
- *       与 `POST /api/ai/football-prediction` 类似：可选 `prompt` 传入 JSON 数组字符串；不传则从懂球帝篮球 tab 拉取并自动生成（今天、明天、未开赛）。
+ *       与 `POST /api/ai/football-prediction` 类似：可选 `prompt` 传入 JSON 数组字符串；不传则从懂球帝篮球 tab 拉取并自动生成（今天、明天、未开赛，**升序最多 30 场**）。
  *       默认系统提示要求模型输出结构化 JSON（胜负、让分、大小分、胜分差、单双、信心指数及 `jinrixuan` / `lengmen` / `chuanguan` 总结区）。
- *       **接口只读数据库**：按 prompt 返回 `BasketballPredictionCache` 中 **最新一条**；无记录时 **404**。模型写入仅由定时任务执行（与足球一致）。
+ *       **接口只读数据库**：查找逻辑与足球一致（`prompt` + `promptHash` 精确优先，近 48 小时内按 match_id 前缀 / 集合兼容）；无可用记录时 **404**。模型写入仅由定时任务执行（与足球一致）。
  *       响应中 `content.matches` 按本次 `prompt` 中 match_id 顺序整理，每条 `match_id` 与请求 prompt 一致。
  *     tags: [AI]
  *     security:

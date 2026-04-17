@@ -1,5 +1,6 @@
 import path from "node:path";
 import dotenv from "dotenv";
+import { withPostgresSessionTimezone } from "../lib/postgres-url-timezone.js";
 
 const rootDir = path.resolve(__dirname, "../..");
 dotenv.config({ path: path.join(rootDir, ".env") });
@@ -30,7 +31,8 @@ export const env = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   port: Number(process.env.PORT ?? 3000),
   baseUrl: trimTrailingSlashes(process.env.BASE_URL?.trim() ?? `http://localhost:${Number(process.env.PORT ?? 3000)}`),
-  databaseUrl: required("DATABASE_URL"),
+  /** 未在 `DATABASE_URL` 的 `options` 中指定 `TimeZone` 时，自动附加 `Asia/Shanghai` 会话时区 */
+  databaseUrl: withPostgresSessionTimezone(required("DATABASE_URL")),
   jwtSecret: required("JWT_SECRET"),
   jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? "7d",
   wechatAppId: required("WECHAT_APPID"),
@@ -43,7 +45,32 @@ export const env = {
   ),
   vectorEngineModel: process.env.VECTOR_ENGINE_MODEL?.trim() ?? "gpt-5.4-nano",
   /** 足球/篮球预测：未传 body `model` 时使用；默认 gpt-5.4（与通用 VECTOR_ENGINE_MODEL 可分离） */
-  predictionVectorEngineModel: process.env.PREDICTION_VECTOR_ENGINE_MODEL?.trim() ?? "gpt-5.4",
+  predictionVectorEngineModel: process.env.PREDICTION_VECTOR_ENGINE_MODEL?.trim() ?? "gpt-5.4-nano",
+  /**
+   * 预测预热调用 Vector Engine 的单次请求超时（毫秒）。赛程 JSON 很大、生成耗时长，默认 15 分钟；
+   * 过短易出现 undici `TypeError: fetch failed`（底层超时/连接重置）。
+   */
+  predictionVectorEngineTimeoutMs: (() => {
+    const raw = process.env.PREDICTION_VECTOR_ENGINE_TIMEOUT_MS?.trim();
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 30_000) {
+        return Math.floor(n);
+      }
+    }
+    return 15 * 60 * 1000;
+  })(),
+  /** 预测预热在 `fetch` 层失败时的重试次数（含首次），默认 3；仅对瞬时网络错误重试 */
+  predictionVectorEngineFetchRetries: (() => {
+    const raw = process.env.PREDICTION_VECTOR_ENGINE_FETCH_RETRIES?.trim();
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 1 && n <= 10) {
+        return Math.floor(n);
+      }
+    }
+    return 3;
+  })(),
   /** 旅游攻略：未传 body `model` 时使用；默认 gpt-5.4-nano */
   travelGuideVectorEngineModel: process.env.TRAVEL_GUIDE_VECTOR_ENGINE_MODEL?.trim() ?? "gpt-5.4-nano",
   /** 足/篮预测定时预热：默认开启；设为 `false` 时不启动定时任务 */

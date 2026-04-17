@@ -47,6 +47,9 @@ export async function executeFootballPrediction(params: { body: unknown }): Prom
     throw new HttpError(400, "No football matches found for today and tomorrow (not started)");
   }
 
+  logger.info(`Football prediction API: prompt length=${promptStr.length} chars`);
+  logger.debug(`Football prediction API prompt:\n${promptStr}`);
+
   const row = await getLatestFootballPredictionCache(promptStr);
   if (!row) {
     throw new HttpError(
@@ -115,12 +118,18 @@ export async function executeBasketballPrediction(params: { body: unknown }): Pr
   };
 }
 
-/** 定时任务：无 HTTP body，用默认赛程拉取与 system */
-export async function runFootballPredictionWarmup(): Promise<void> {
+/**
+ * 定时任务：无 HTTP body，用默认赛程拉取与 system。
+ * @returns 是否已向 `FootballPredictionCache` 写入新行（赛程筛出 0 场时直接跳过，不调模型）
+ */
+export async function runFootballPredictionWarmup(): Promise<boolean> {
   const footballData = await fetchFootballList({ start: formatFootballTabStart() });
   const promptStr = buildFootballPredictionJsonPrompt(footballData);
   if (!promptStr) {
-    return;
+    logger.info(
+      "Prediction warmup football: skip write — no matches after filter (Beijing today/tomorrow, not started)"
+    );
+    return false;
   }
   const model = env.predictionVectorEngineModel;
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
@@ -130,15 +139,27 @@ export async function runFootballPredictionWarmup(): Promise<void> {
   logger.debug(
     `[Prediction warmup football] model=${model}\n--- system ---\n${FOOTBALL_PREDICTION_SYSTEM}\n--- user ---\n${promptStr}`
   );
-  const { content } = await vectorEngineChat({ messages, model });
+  const { content } = await vectorEngineChat({
+    messages,
+    model,
+    timeoutMs: env.predictionVectorEngineTimeoutMs,
+    networkRetries: env.predictionVectorEngineFetchRetries,
+  });
   await cachePrediction(promptStr, content);
+  return true;
 }
 
-export async function runBasketballPredictionWarmup(): Promise<void> {
+/**
+ * @returns 是否已向 `BasketballPredictionCache` 写入新行
+ */
+export async function runBasketballPredictionWarmup(): Promise<boolean> {
   const basketballData = await fetchBasketballTab({ start: formatBasketballTabStart() });
   const promptStr = buildBasketballPredictionJsonPrompt(basketballData);
   if (!promptStr) {
-    return;
+    logger.info(
+      "Prediction warmup basketball: skip write — no matches after filter (Beijing today/tomorrow, not started)"
+    );
+    return false;
   }
   const model = env.predictionVectorEngineModel;
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [
@@ -148,6 +169,12 @@ export async function runBasketballPredictionWarmup(): Promise<void> {
   logger.debug(
     `[Prediction warmup basketball] model=${model}\n--- system ---\n${BASKETBALL_PREDICTION_SYSTEM}\n--- user ---\n${promptStr}`
   );
-  const { content } = await vectorEngineChat({ messages, model });
+  const { content } = await vectorEngineChat({
+    messages,
+    model,
+    timeoutMs: env.predictionVectorEngineTimeoutMs,
+    networkRetries: env.predictionVectorEngineFetchRetries,
+  });
   await cacheBasketballPrediction(promptStr, content);
+  return true;
 }

@@ -11,14 +11,18 @@ export async function runPredictionWarmupCycle(): Promise<void> {
     return;
   }
   try {
-    await runFootballPredictionWarmup();
-    logger.info("Prediction warmup: football cache refreshed");
+    const wrote = await runFootballPredictionWarmup();
+    if (wrote) {
+      logger.info("Prediction warmup: football cache refreshed");
+    }
   } catch (err) {
     logger.error("Prediction warmup: football failed", err);
   }
   try {
-    await runBasketballPredictionWarmup();
-    logger.info("Prediction warmup: basketball cache refreshed");
+    const wrote = await runBasketballPredictionWarmup();
+    if (wrote) {
+      logger.info("Prediction warmup: basketball cache refreshed");
+    }
   } catch (err) {
     logger.error("Prediction warmup: basketball failed", err);
   }
