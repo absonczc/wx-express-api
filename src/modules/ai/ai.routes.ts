@@ -7,6 +7,9 @@ import {
   postFootballPrediction,
   postBasketballPrediction,
   postTravelGuide,
+  postTravelGuideAsync,
+  getTravelGuideJob,
+  postTravelGuideJobCancel,
 } from "./ai.controller.js";
 
 export const aiRouter = Router();
@@ -151,13 +154,131 @@ aiRouter.post("/travel-guide", authRequired, asyncHandler(postTravelGuide));
 
 /**
  * @swagger
+ * /api/ai/travel-guide/async:
+ *   post:
+ *     summary: 旅游行程攻略（异步：立即返回 jobId，轮询查询结果）
+ *     description: |
+ *       请求体与 `POST /api/ai/travel-guide` **完全相同**（`prompt` / 可选 `system` / `model`）。
+ *       本接口**不等待**向量引擎，立即返回 `jobId`。
+ *       客户端请使用 **`GET /api/ai/travel-guide/jobs/{jobId}`** 查询进度；**建议轮询间隔约 8 秒**，直至 `status` 为 `completed`、`failed` 或 `cancelled`。
+ *       进行中可调用 **`POST /api/ai/travel-guide/jobs/{jobId}/cancel`** 取消（仅 `pending` 时成功）。
+ *       任务仅在服务端内存中保存约 1 小时，超时后查询返回 404。
+ *       仅创建任务时的同一登录用户可查询该 `jobId`。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/TravelGuideRequest'
+ *     responses:
+ *       200:
+ *         description: 已受理，请用返回的 jobId 轮询
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TravelGuideAsyncStartResponse'
+ *       400:
+ *         description: Body 非法（与同步接口一致：`prompt` / `system` 等；提交时即校验，不调用模型）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ *       401:
+ *         description: 未授权
+ */
+aiRouter.post("/travel-guide/async", authRequired, asyncHandler(postTravelGuideAsync));
+
+/**
+ * @swagger
+ * /api/ai/travel-guide/jobs/{jobId}:
+ *   get:
+ *     summary: 查询异步旅游攻略任务状态
+ *     description: |
+ *       返回 `POST /api/ai/travel-guide/async` 创建的任务状态。
+ *       - `pending`：模型仍在生成中，建议 **约 8 秒** 后再次请求。
+ *       - `completed`：`model` 与 `content` 与同步 `POST /api/ai/travel-guide` 成功响应一致。
+ *       - `failed`：`error` / `details` / `httpStatus` 与同步失败时含义一致（HTTP 仍返回 200，便于小程序轮询不触发全局错误拦截；请根据 `status` 与 `httpStatus` 处理）。
+ *       - `cancelled`：用户已调用取消接口，或上游请求被中止；无 `content`。
+ *       任务不存在或无权访问时 **404**（不区分）。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: `POST /travel-guide/async` 返回的 jobId
+ *     responses:
+ *       200:
+ *         description: 查询成功（含 pending / completed / failed / cancelled）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TravelGuideJobPollResponse'
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 任务不存在、已过期或无权访问
+ */
+aiRouter.get("/travel-guide/jobs/:jobId", authRequired, asyncHandler(getTravelGuideJob));
+
+/**
+ * @swagger
+ * /api/ai/travel-guide/jobs/{jobId}/cancel:
+ *   post:
+ *     summary: 取消异步旅游攻略任务
+ *     description: |
+ *       仅当任务 **`pending`** 时可取消：服务端 `AbortSignal` 中止对 Vector Engine 的 `fetch`，任务变为 `cancelled`。
+ *       之后 `GET .../jobs/{jobId}` 返回 `status: cancelled`。
+ *       若任务已 `completed` / `failed` / `cancelled`，返回 **409**，`details.status` 为当前状态。
+ *       任务不存在或无权访问时 **404**。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: jobId
+ *         required: true
+ *         schema:
+ *           type: string
+ *           format: uuid
+ *         description: `POST /travel-guide/async` 返回的 jobId
+ *     responses:
+ *       200:
+ *         description: 已取消
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TravelGuideJobCancelResponse'
+ *       401:
+ *         description: 未授权
+ *       404:
+ *         description: 任务不存在、已过期或无权访问
+ *       409:
+ *         description: 任务已结束，无法再取消（`details.status` 为 completed / failed / cancelled）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ */
+aiRouter.post("/travel-guide/jobs/:jobId/cancel", authRequired, asyncHandler(postTravelGuideJobCancel));
+
+/**
+ * @swagger
  * /api/ai/football-prediction:
  *   post:
  *     summary: 足球比分预测
  *     description: |
- *       先按用户消息（或自动拉取的赛程文本）查 `FootballPredictionCache`，在 `PREDICTION_CACHE_TTL_MS`（默认 1 小时）内命中则 `cached: true` 直接返回；否则调用向量引擎并写入缓存。
- *       向量引擎网关默认 `https://api.vectorengine.ai/v1`；未传 body `model` 时预测使用 **`gpt-5.4`**（可用 `PREDICTION_VECTOR_ENGINE_MODEL` 覆盖，定价见 https://api.vectorengine.ai/pricing?keyword=gpt ）。
- *       响应中 `content.matches` 会按本次 `prompt` 里「（match_id=…）」顺序整理，且每条 `match_id` 与请求 prompt 中的值一致。
+ *       自动拉取赛程时，用户消息为 JSON 数组字符串（home、away、time、match_id），筛选「北京时间今天、明天、且未开赛」的场次。
+ *       **接口只读数据库**：按该 prompt 查询 `FootballPredictionCache` 中 **`createdAt` 最新一条** 返回（含 `cacheCreatedAt`）；**不在此路径调用模型**。无记录时 **404**。
+ *       写入缓存由进程启动时及每 `PREDICTION_SCHEDULE_INTERVAL_MS`（默认 6 小时）的定时任务完成（须配置 `VECTOR_ENGINE_API_KEY`；模型名见 `PREDICTION_VECTOR_ENGINE_MODEL`，默认 gpt-5.4）。
+ *       响应中 `content.matches` 按本次 `prompt` 中 match_id 顺序整理（支持旧版「（match_id=…）」或 JSON 数组），且每条 `match_id` 与请求 prompt 一致。
  *     tags: [AI]
  *     security:
  *       - bearerAuth: []
@@ -169,7 +290,9 @@ aiRouter.post("/travel-guide", authRequired, asyncHandler(postTravelGuide));
  *             $ref: '#/components/schemas/FootballPredictionRequest'
  *     responses:
  *       200:
- *         description: 足球比分预测结果
+ *         description: 返回库中该 prompt 的最新预测结果
+ *       404:
+ *         description: 该 prompt 尚无缓存记录（等待定时任务写入）
  */
 aiRouter.post("/football-prediction", authRequired, asyncHandler(postFootballPrediction));
 
@@ -179,10 +302,9 @@ aiRouter.post("/football-prediction", authRequired, asyncHandler(postFootballPre
  *   post:
  *     summary: 篮球比分与盘路预测
  *     description: |
- *       与 `POST /api/ai/football-prediction` 类似：可选 `prompt` 传入多场比赛文本；不传则从懂球帝篮球 tab 拉取今日赛程并自动生成用户消息。
+ *       与 `POST /api/ai/football-prediction` 类似：可选 `prompt` 传入 JSON 数组字符串；不传则从懂球帝篮球 tab 拉取并自动生成（今天、明天、未开赛）。
  *       默认系统提示要求模型输出结构化 JSON（胜负、让分、大小分、胜分差、单双、信心指数及 `jinrixuan` / `lengmen` / `chuanguan` 总结区）。
- *       须配置 `VECTOR_ENGINE_API_KEY`。先按 `prompt` 查 `BasketballPredictionCache`，在 `PREDICTION_CACHE_TTL_MS`（默认 1 小时）内命中则直接返回；否则调用模型并写入篮球缓存表（与足球缓存表分离）。
- *       未传 body `model` 时预测使用 **`gpt-5.4`**（`PREDICTION_VECTOR_ENGINE_MODEL` 可覆盖；网关与定价同足球预测）。
+ *       **接口只读数据库**：按 prompt 返回 `BasketballPredictionCache` 中 **最新一条**；无记录时 **404**。模型写入仅由定时任务执行（与足球一致）。
  *       响应中 `content.matches` 按本次 `prompt` 中 match_id 顺序整理，每条 `match_id` 与请求 prompt 一致。
  *     tags: [AI]
  *     security:
@@ -201,10 +323,10 @@ aiRouter.post("/football-prediction", authRequired, asyncHandler(postFootballPre
  *             schema:
  *               $ref: '#/components/schemas/BasketballPredictionResponse'
  *       400:
- *         description: Body 非法、今日无赛程缓存用 prompt 为空等
+ *         description: Body 非法、自动拉取赛程后无可用 prompt 等
+ *       404:
+ *         description: 该 prompt 尚无篮球预测缓存
  *       502:
- *         description: 上游向量引擎错误
- *       503:
- *         description: 未配置 VECTOR_ENGINE_API_KEY
+ *         description: 库中结果无法解析为 JSON
  */
 aiRouter.post("/basketball-prediction", authRequired, asyncHandler(postBasketballPrediction));

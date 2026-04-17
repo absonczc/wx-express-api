@@ -113,7 +113,8 @@ footballRouter.get("/list-transformed", asyncHandler(getFootballListTransformed)
  *         description: 起始时间，格式如 "2026-04-1400:00:00"
  *     responses:
  *       200:
- *         description: 格式化后的今天和明天比赛列表
+ *         description: |
+ *           `data` 为 JSON 数组字符串：筛选「北京时间今天、明天、且未开赛」的场次，每项含 home、away、time（YYYY-MM-DD HH:mm:ss）、match_id；无场次时为空字符串。
  *         content:
  *           application/json:
  *             schema:

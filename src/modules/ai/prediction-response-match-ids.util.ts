@@ -1,6 +1,6 @@
 /**
- * 足/篮预测：从用户 prompt 中按出现顺序解析 match_id，并把模型返回的 matches
- * 与请求对齐（match_id 强制为请求里的原样字符串；顺序与请求一致）。
+ * 足/篮预测：从用户 prompt 中按出现顺序解析 match_id（旧版「（match_id=…）」多行文本，或 JSON 数组里每项的 `match_id`），
+ * 并把模型返回的 matches 与请求对齐（match_id 强制为请求里的原样字符串；顺序与请求一致）。
  */
 
 function idEquals(a: unknown, b: string): boolean {
@@ -27,7 +27,32 @@ export function extractOrderedMatchIdsFromPredictionPrompt(prompt: string): stri
     const id = m[1]?.trim();
     if (id) out.push(id);
   }
-  return out;
+  if (out.length > 0) {
+    return out;
+  }
+
+  const trimmed = prompt.trim();
+  if (!trimmed.startsWith("[")) {
+    return [];
+  }
+  try {
+    const parsed: unknown = JSON.parse(trimmed);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    const ids: string[] = [];
+    for (const row of parsed) {
+      if (row !== null && typeof row === "object" && !Array.isArray(row)) {
+        const mid = (row as Record<string, unknown>).match_id;
+        if (mid !== undefined && mid !== null) {
+          ids.push(String(mid));
+        }
+      }
+    }
+    return ids;
+  } catch {
+    return [];
+  }
 }
 
 type PoolEntry = { row: Record<string, unknown>; idx: number };

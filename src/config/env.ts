@@ -46,6 +46,19 @@ export const env = {
   predictionVectorEngineModel: process.env.PREDICTION_VECTOR_ENGINE_MODEL?.trim() ?? "gpt-5.4",
   /** 旅游攻略：未传 body `model` 时使用；默认 gpt-5.4-nano */
   travelGuideVectorEngineModel: process.env.TRAVEL_GUIDE_VECTOR_ENGINE_MODEL?.trim() ?? "gpt-5.4-nano",
+  /** 足/篮预测定时预热：默认开启；设为 `false` 时不启动定时任务 */
+  predictionScheduleEnabled: process.env.PREDICTION_SCHEDULE_ENABLED?.trim() !== "false",
+  /** 足/篮预测定时预热间隔（毫秒），默认 6 小时；最小 60 秒 */
+  predictionScheduleIntervalMs: (() => {
+    const raw = process.env.PREDICTION_SCHEDULE_INTERVAL_MS?.trim();
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 60_000) {
+        return n;
+      }
+    }
+    return 6 * 60 * 60 * 1000;
+  })(),
   /** 和风天气 v7；Key 见控制台凭据，勿提交到仓库 */
   qweatherApiKey: process.env.QWEATHER_API_KEY?.trim() ?? "",
   qweatherApiHost: normalizeQweatherApiHost(process.env.QWEATHER_API_HOST ?? ""),

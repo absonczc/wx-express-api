@@ -13,6 +13,7 @@ type OpenAICompatChatResponse = {
 export async function vectorEngineChat(params: {
   messages: ChatMessage[];
   model?: string;
+  signal?: AbortSignal;
 }): Promise<{ content: string; model: string }> {
   if (!env.vectorEngineApiKey) {
     throw new HttpError(503, "Vector Engine is not configured (VECTOR_ENGINE_API_KEY)");
@@ -31,6 +32,7 @@ export async function vectorEngineChat(params: {
       model,
       messages: params.messages,
     }),
+    signal: params.signal,
   });
 
   let raw: OpenAICompatChatResponse;

@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { HttpError } from "../../middleware/error.middleware.js";
-import { fetchFootballList, buildTodayTomorrowPrompt, transformFootballData, fetchMatchSituation, fetchMatchLineup, fetchMatchAnalysis, transformMatchDetail } from "./football.service.js";
+import { buildFootballPredictionJsonPrompt } from "../../utils/prediction-prompt-json.js";
+import { fetchFootballList, transformFootballData, fetchMatchSituation, fetchMatchLineup, fetchMatchAnalysis, transformMatchDetail } from "./football.service.js";
 
 export async function getFootballList(req: Request, res: Response): Promise<void> {
   const start = (req.query.start as string) || "2026-04-1400:00:00";
@@ -49,7 +50,7 @@ export async function getTodayTomorrowMatches(req: Request, res: Response): Prom
   const from = (req.query.from as string) || "msite_com";
 
   const data = await fetchFootballList({ start, version, init, wfrom, from });
-  const prompt = buildTodayTomorrowPrompt(data);
+  const prompt = buildFootballPredictionJsonPrompt(data);
 
   res.json({
     ok: true,

@@ -430,7 +430,13 @@ const options: swaggerJsdoc.Options = {
           type: "object",
           properties: {
             ok: { type: "boolean", example: true },
-            data: { type: "string", description: "格式化后的今天和明天比赛列表" },
+            data: {
+              type: "string",
+              description:
+                "JSON 数组字符串：筛选「北京时间今天、明天、且未开赛」的场次，每项含 home、away、time（YYYY-MM-DD HH:mm:ss）、match_id。无场次时为空字符串。",
+              example:
+                '[{"home":"吉达国民","away":"柔佛新山","time":"2026-04-17 22:45:00","match_id":"54440340"}]',
+            },
           },
         },
         AiPromptRequest: {
@@ -578,6 +584,70 @@ const options: swaggerJsdoc.Options = {
             },
           },
         },
+        TravelGuideAsyncStartResponse: {
+          type: "object",
+          required: ["ok", "jobId"],
+          description:
+            "异步旅游攻略提交成功。请用 `jobId` 调用 `GET /api/ai/travel-guide/jobs/{jobId}`；建议客户端每约 **8 秒** 轮询一次直至 `status` 为 `completed`、`failed` 或 `cancelled`；可调用 `POST .../jobs/{jobId}/cancel` 取消进行中的任务。",
+          properties: {
+            ok: { type: "boolean", example: true },
+            jobId: {
+              type: "string",
+              format: "uuid",
+              description: "任务 ID，与当前登录用户绑定；约 1 小时后过期",
+            },
+          },
+        },
+        TravelGuideJobPollResponse: {
+          type: "object",
+          required: ["ok", "status"],
+          description:
+            "异步任务查询结果。`status` 为 `pending` 时仅含 `ok`/`status`；`completed` 时含 `model`/`content`（与同步 `POST /travel-guide` 成功体一致）；`failed` 时含 `error`，可选 `details`（如 JSON 解析失败时的 `preview`）、`httpStatus`（与若同步调用失败时对应的 HTTP 状态码一致，如 400/502/503）；`cancelled` 表示用户已调用取消或上游请求被中止，仅含 `ok`/`status`。",
+          properties: {
+            ok: { type: "boolean", example: true },
+            status: {
+              type: "string",
+              enum: ["pending", "completed", "failed", "cancelled"],
+              description: "任务状态",
+            },
+            model: {
+              type: "string",
+              description: "仅 `status: completed` 时存在；实际使用的模型名",
+            },
+            content: {
+              $ref: "#/components/schemas/TravelGuideContent",
+              description: "仅 `status: completed` 时存在；已解析的攻略 JSON 对象",
+            },
+            error: {
+              type: "string",
+              description: "仅 `status: failed` 时存在；错误说明",
+            },
+            details: {
+              type: "object",
+              additionalProperties: true,
+              description: "仅 `status: failed` 时可能存在；与 `HttpErrorBody.details` 类似",
+            },
+            httpStatus: {
+              type: "integer",
+              description:
+                "仅 `status: failed` 时可能存在；对应同步接口若直接返回错误时会使用的 HTTP 状态码（轮询接口 HTTP 仍为 200）",
+              example: 502,
+            },
+          },
+        },
+        TravelGuideJobCancelResponse: {
+          type: "object",
+          required: ["ok", "cancelled"],
+          description: "`POST /api/ai/travel-guide/jobs/{jobId}/cancel` 成功取消进行中的任务。",
+          properties: {
+            ok: { type: "boolean", example: true },
+            cancelled: {
+              type: "boolean",
+              example: true,
+              description: "恒为 true，表示本次请求将任务置为已取消",
+            },
+          },
+        },
         HttpErrorBody: {
           type: "object",
           description: "全局错误中间件返回体（非 2xx 时常见 `ok: false`）",
@@ -603,17 +673,18 @@ const options: swaggerJsdoc.Options = {
             prompt: {
               type: "string",
               description:
-                "比赛信息（可选）。不传或空字符串时服务端从懂球帝拉取赛程并自动生成与篮球接口一致的多行格式。",
-              example: "比赛1（match_id=1）：\n球队A vs 球队B｜英超｜2026-04-15 03:00\n\n比赛2（match_id=2）：\n球队C vs 球队D｜西甲｜2026-04-15 04:00",
+                "比赛信息（可选）。不传或空字符串时服务端从懂球帝拉取赛程并自动生成 JSON 数组字符串：筛选「北京时间今天、明天、且未开赛」的场次，字段 home、away、time（北京时间）、match_id。",
+              example:
+                '[{"home":"吉达国民","away":"柔佛新山","time":"2026-04-17 22:45:00","match_id":"54440340"}]',
             },
             system: {
               type: "string",
-              description: "系统提示词，默认为足球分析师角色（可选）",
+              description: "HTTP 预测接口只读库，**忽略**该字段（写入由定时任务完成）",
             },
             model: {
               type: "string",
               description:
-                "模型名（可选）。不传时使用环境变量 `PREDICTION_VECTOR_ENGINE_MODEL`，未配置则默认 **`gpt-5.4`**（Vector Engine，见 https://api.vectorengine.ai/pricing?keyword=gpt ）。传入则覆盖默认值。",
+                "HTTP 预测接口只读库，**忽略**该字段（定时任务写入时使用 `PREDICTION_VECTOR_ENGINE_MODEL`，默认 gpt-5.4）",
             },
           },
         },
@@ -623,17 +694,17 @@ const options: swaggerJsdoc.Options = {
             ok: { type: "boolean", example: true },
             cached: {
               type: "boolean",
-              description:
-                "是否命中 `FootballPredictionCache`：同 `prompt` 且在 `PREDICTION_CACHE_TTL_MS`（默认 1 小时）内的最新一条",
-              example: false,
+              description: "恒为 true：内容来自 `FootballPredictionCache` 中该 `prompt` 的 `createdAt` 最新一条",
+              example: true,
             },
-            model: {
+            cacheCreatedAt: {
               type: "string",
-              description: "未命中缓存、实际调用模型时返回所用模型名（预测默认 gpt-5.4）；仅命中缓存时可能省略",
+              format: "date-time",
+              description: "本条缓存记录的创建时间（ISO 8601），便于确认是否为库中最新写入",
             },
             content: {
               description:
-                "模型输出的 JSON（已解析为对象）或解析失败时的字符串。成功解析且含 `matches` 时：服务端按本次请求 `prompt` 中「（match_id=…）」的出现顺序重排，并将每条 `match_id` 强制为 prompt 中的原样字符串；`n`、`title` 与输出顺序一致（比赛1、比赛2…）。",
+                "库中存储的模型输出 JSON（已解析为对象）。成功解析且含 `matches` 时：服务端按本次请求 `prompt` 中 match_id 顺序重排（支持旧版「（match_id=…）」文本或 JSON 数组每项的 `match_id`），并将每条 `match_id` 强制为 prompt 中的原样字符串；`n`、`title` 与输出顺序一致（比赛1、比赛2…）。",
               oneOf: [{ type: "object", additionalProperties: true }, { type: "string" }],
             },
           },
@@ -644,18 +715,17 @@ const options: swaggerJsdoc.Options = {
             prompt: {
               type: "string",
               description:
-                "比赛信息文本（可选）。不传或空字符串时服务端从懂球帝篮球 tab 拉取今日赛程并拼成与足球接口一致的多行格式。",
+                "比赛信息（可选）。不传或空字符串时服务端从懂球帝篮球 tab 拉取赛程并自动生成与足球接口一致的 JSON 数组字符串（今天、明天、未开赛）。",
               example:
-                "比赛1（match_id=54439749）：\n湖人 vs 勇士｜NBA｜2026-04-17 10:00:00\n\n比赛2（match_id=54439750）：\n凯尔特人 vs 热火｜NBA｜2026-04-17 10:30:00",
+                '[{"home":"湖人","away":"勇士","time":"2026-04-17 10:30:00","match_id":"54439749"}]',
             },
             system: {
               type: "string",
-              description: "系统提示词（可选），默认使用内置篮球分析师角色与 JSON 输出约束",
+              description: "HTTP 预测接口只读库，**忽略**该字段",
             },
             model: {
               type: "string",
-              description:
-                "模型名（可选）。不传时使用 `PREDICTION_VECTOR_ENGINE_MODEL`，默认 **`gpt-5.4`**（Vector Engine）。传入则覆盖。",
+              description: "HTTP 预测接口只读库，**忽略**该字段",
             },
           },
         },
@@ -665,14 +735,17 @@ const options: swaggerJsdoc.Options = {
             ok: { type: "boolean", example: true },
             cached: {
               type: "boolean",
-              description:
-                "是否命中数据库缓存：`BasketballPredictionCache` 中同 `prompt` 且在 `PREDICTION_CACHE_TTL_MS`（默认 1 小时，毫秒，0 表示禁用缓存）内的最新一条",
-              example: false,
+              description: "恒为 true：内容来自 `BasketballPredictionCache` 中该 `prompt` 的 `createdAt` 最新一条",
+              example: true,
             },
-            model: { type: "string", description: "实际使用的模型名（预测默认 gpt-5.4）", example: "gpt-5.4" },
+            cacheCreatedAt: {
+              type: "string",
+              format: "date-time",
+              description: "本条缓存记录的创建时间（ISO 8601）",
+            },
             content: {
               description:
-                "模型输出：约定为 JSON，含 `matches[]`（每场 `yuce`：shengfu、rangfenshengfu、daxiaofen、shengfencha、danshuangpan、xinxinzhishu）及 `jinrixuan`、`lengmen`、`chuanguan`；解析失败时为字符串。成功解析且含 `matches` 时：服务端按本次请求 `prompt` 中「（match_id=…）」顺序重排，每条 `match_id` 与 prompt 原样一致；`n`、`title` 与顺序一致。",
+                "库中存储的模型输出：约定为 JSON，含 `matches[]`（每场 `yuce`：shengfu、rangfenshengfu、daxiaofen、shengfencha、danshuangpan、xinxinzhishu）及 `jinrixuan`、`lengmen`、`chuanguan`。成功解析且含 `matches` 时：服务端按本次请求 `prompt` 中 match_id 顺序重排（旧版多行或 JSON 数组）；每条 `match_id` 与 prompt 原样一致；`n`、`title` 与顺序一致。",
               oneOf: [{ type: "object", additionalProperties: true }, { type: "string" }],
             },
           },

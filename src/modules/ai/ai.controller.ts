@@ -1,20 +1,13 @@
 import type { Request, Response } from "express";
 import { env } from "../../config/env.js";
 import { HttpError } from "../../middleware/error.middleware.js";
+import { executeBasketballPrediction, executeFootballPrediction } from "./prediction-execute.service.js";
+import {
+  cancelTravelGuideJob,
+  getTravelGuideJobForUser,
+  startTravelGuideJob,
+} from "./travel-guide-async.service.js";
 import { vectorEngineChat } from "./vectorengine.service.js";
-import { fetchFootballList, buildTodayTomorrowPrompt } from "../football/football.service.js";
-import {
-  fetchBasketballTab,
-  buildTodayTomorrowBasketballPrompt,
-  formatBasketballTabStart,
-} from "../basketball/basketball.service.js";
-import {
-  getCachedPrediction,
-  cachePrediction,
-  getCachedBasketballPrediction,
-  cacheBasketballPrediction,
-} from "./football-cache.service.js";
-import { applyRequestMatchIdsToPredictionContent } from "./prediction-response-match-ids.util.js";
 
 const roles = new Set(["system", "user", "assistant"]);
 
@@ -144,66 +137,6 @@ export async function postAiChat(req: Request, res: Response): Promise<void> {
   });
 }
 
-const DEFAULT_FOOTBALL_SYSTEM = `请你扮演一名专业足球竞彩分析师，根据我提供的多场比赛信息，逐场输出推荐分析，风格类似实战推荐单。
-分析维度包括：
-- 近期状态（进攻/防守效率）
-- xG（预期进球）或进攻效率（篮球）
-- 球员伤停及关键球员状态
-- 战术匹配情况
-- 主客场表现差异
-- 盘口/市场赔率变化（如适用）
-比赛分析：
-球队A：简要分析（主场/进攻/状态/战术特点）
-球队B：简要分析（客场/防守/抗压/短板）
-
-历史交锋：一句话总结（谁占优/主场优势）
-
-✅ 比分：X-X 或 X-X
-✅ 让球胜负：明确盘口 + 倾向（如让1.5球，看好赢盘）
-✅ 大小球：大/小X.X球
-✅ 信心指数：⭐⭐⭐⭐☆（XX%）
-
-关键因素：用一句话总结（如「主强客弱 + 防线差距」）
-
-【整体风格要求】
-
-使用🔥、✅等符号增强可读性
-每场控制在100~150字，简洁有力
-结论必须明确，不要模糊表达
-语气专业+偏实战推荐
-不要出现「可能」「或许」等犹豫词
-
-【输入格式如下】
-比赛1（match_id=1）：
-球队A vs 球队B｜联赛｜时间
-
-比赛2（match_id=2）：
-球队C vs 球队D｜联赛｜时间
-
-（可输入多场）在输出全部比赛后，额外增加一个总结区：
-
-总结区必须严格使用以下三行标题（便于分卡展示），每段另起一行，段内可配合 🎯/💣/🔥：
-【今日精选】挑出最稳的1~2场（给理由），需写出球队名称
-【冷门预警】指出1场可能爆冷的比赛，需写出球队名称
-【串关建议】给出2~3场组合推荐，需写出球队名称
-
-要求逻辑清晰，偏实战。
-
-【输出排版要求（必须遵守）】
-
-每条比赛的 match_id 必须与用户消息里该行「（match_id=…）」中的值完全一致（原样字符串，含数字 ID）；matches 数组顺序须与用户消息中比赛出现顺序一致。n、title 与顺序一致（比赛1、比赛2…）。
-
-输出格式：
-{
-	"matches": [
-		{ "match_id": "与用户输入该行括号内 match_id 完全一致", "n": 1, "bisaifenxi": "比赛分析", "lishijiaofeng": "历史交锋", "jingufen": "关键因素", "yuce": { "bifen": "比分预测", "rangqiu": "让球胜负预测", "daxiao": "大小球预测", "xindu": "信心指数预测" } },
-		{ "match_id": "与用户输入该行括号内 match_id 完全一致", "n": 2, "bisaifenxi": "比赛分析", "lishijiaofeng": "历史交锋", "jingufen": "关键因素", "yuce": { "bifen": "比分预测", "rangqiu": "让球胜负预测", "daxiao": "大小球预测", "xindu": "信心指数预测" } }
-	],
-	"jinrixuan": "今日精选的内容",
-	"lengmen": "冷门预警的内容",
-	"chuanguan": "串关建议的内容"
-}`;
-
 const DEFAULT_TRAVEL_SYSTEM = `你是一名专业旅行规划师，请为我制定一个详细的旅游行程方案。
 
 目的地：（填写城市/国家）- 请求的参数
@@ -238,6 +171,7 @@ const DEFAULT_TRAVEL_SYSTEM = `你是一名专业旅行规划师，请为我制�
 请优先推荐真实存在、评价良好的店铺和景点，避免虚构内容。
 餐厅尽量选择在小红书推荐/大众点评评分较高的具体门店。
 住宿优先推荐交通便利区域（靠近地铁/市中心）。
+给出出发地 到 目的地的 通行方案和方式
 
 【输出要求（必须遵守）】
 - 只输出一个合法 JSON 对象，可被 JSON.parse 直接解析
@@ -281,232 +215,147 @@ const DEFAULT_TRAVEL_SYSTEM = `你是一名专业旅行规划师，请为我制�
 `
 ;
 
-const DEFAULT_BASKETBALL_SYSTEM = `请你扮演一名专业篮球竞彩分析师（NBA/CBA 等），根据我提供的多场比赛信息，逐场输出推荐分析，风格类似实战推荐单。
-分析维度包括：
-- 近期状态（进攻效率/防守效率/节奏）
-- 有效命中率、回合占有率、失误控制与篮板（含进攻篮板）
-- 球员伤停及关键球员状态
-- 对位与轮换深度、战术风格匹配（挡拆/换防/内线优势等）
-- 主客场表现差异
-- 盘口/市场赔率变化（如适用）
-比赛分析：
-球队A：简要分析（主场/进攻/状态/战术特点）
-球队B：简要分析（客场/防守/抗压/短板）
-
-历史交锋：一句话总结（谁占优/主场优势）
-
-✅ 胜负：球队A 胜
-✅ 让分胜负：明确盘口 + 倾向（如让1.5分，看好赢盘）
-✅ 大小分：大/小X.X分
-✅ 胜分差：球队A 胜，胜 X.X 分
-✅ 单双盘：单 / 双
-✅ 信心指数：⭐⭐⭐⭐☆（XX%）
-
-关键因素：用一句话总结（如「主强客弱 + 内线差距」）
-
-【整体风格要求】
-
-使用🔥、✅等符号增强可读性
-每场控制在100~150字，简洁有力
-结论必须明确，不要模糊表达
-语气专业+偏实战推荐
-不要出现「可能」「或许」等犹豫词
-
-【输入格式如下】
-比赛1（match_id=1）：
-球队A vs 球队B｜联赛｜时间
-
-比赛2（match_id=2）：
-球队C vs 球队D｜联赛｜时间
-
-（可输入多场）在输出全部比赛后，额外增加一个总结区：
-
-总结区必须严格使用以下三行标题（便于分卡展示），每段另起一行，段内可配合 🎯/💣/🔥：
-【今日精选】挑出最稳的1~2场（给理由），需写出球队名称
-【冷门预警】指出1场可能爆冷的比赛，需写出球队名称
-【串关建议】给出2~3场组合推荐，需写出球队名称
-
-要求逻辑清晰，偏实战。
-
-【输出排版要求（必须遵守）】
-
-每条比赛的 match_id 必须与用户消息里该行「（match_id=…）」中的值完全一致（原样字符串）；matches 顺序与用户消息中比赛出现顺序一致。n、title 与顺序一致（比赛1、比赛2…）。
-
-输出格式：
-{
-	"matches": [
-		{ "match_id": "与用户输入该行括号内 match_id 完全一致", "n": 1, "bisaifenxi": "比赛分析", "lishijiaofeng": "历史交锋", "jingufen": "关键因素",
-		"yuce": {
-			"shengfu": "球队A 胜",
-			"rangfenshengfu": "明确盘口 + 倾向（如让1.5分，看好赢盘）",
-			"daxiaofen": "大/小X.X分",
-			"shengfencha": "球队A 胜，胜 X 分",
-			"danshuangpan": "单 / 双",
-			"xinxinzhishu": "⭐⭐⭐⭐☆（XX%）"
-		}},
-		{ "match_id": "与用户输入该行括号内 match_id 完全一致", "n": 2, "bisaifenxi": "比赛分析", "lishijiaofeng": "历史交锋", "jingufen": "关键因素",
-		"yuce": {
-			"shengfu": "球队A 胜",
-			"rangfenshengfu": "明确盘口 + 倾向（如让1.5分，看好赢盘）",
-			"daxiaofen": "大/小X.X分",
-			"shengfencha": "球队A 胜，胜 X分",
-			"danshuangpan": "单 / 双",
-			"xinxinzhishu": "⭐⭐⭐⭐☆（XX%）"
-		} }
-	],
-	"jinrixuan": "今日精选的内容",
-	"lengmen": "冷门预警的内容",
-	"chuanguan": "串关建议的内容"
-}`;
-
 export async function postFootballPrediction(req: Request, res: Response): Promise<void> {
-  if (!req.body || typeof req.body !== "object") {
-    throw new HttpError(400, "Invalid JSON body");
-  }
-
-  let prompt: string = (req.body as { prompt?: unknown }).prompt as string;
-  if (typeof prompt !== "string" || !prompt.trim()) {
-    const footballData = await fetchFootballList({ start: "2026-04-1400:00:00" });
-    prompt = buildTodayTomorrowPrompt(footballData);
-  }
-
-  if (!prompt.trim()) {
-    throw new HttpError(400, "No football matches found for today and tomorrow");
-  }
-
-  const cachedResult = await getCachedPrediction(prompt);
-  if (cachedResult) {
-    const parsedContent = JSON.parse(cachedResult);
-    res.json({
-      ok: true,
-      cached: true,
-      content: applyRequestMatchIdsToPredictionContent(parsedContent, prompt.trim()),
-    });
-    return;
-  }
-
-  const system = (req.body as { system?: unknown }).system;
-  if (system !== undefined && (typeof system !== "string" || !system.trim())) {
-    throw new HttpError(400, "system must be a non-empty string when provided");
-  }
-
-  const model = parseOptionalModel(req.body) ?? env.predictionVectorEngineModel;
-
-  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
-  messages.push({ role: "system", content: typeof system === "string" && system.trim() ? system.trim() : DEFAULT_FOOTBALL_SYSTEM });
-  messages.push({ role: "user", content: prompt.trim() });
-
-  const { content, model: usedModel } = await vectorEngineChat({ messages, model });
-
-  let parsedContent: unknown;
-  try {
-    parsedContent = JSON.parse(content);
-  } catch {
-    parsedContent = content;
-  }
-
-  await cachePrediction(prompt, content);
-
-  res.json({
-    ok: true,
-    cached: false,
-    model: usedModel,
-    content: applyRequestMatchIdsToPredictionContent(parsedContent, prompt.trim()),
-  });
+  const result = await executeFootballPrediction({ body: req.body });
+  res.json(result);
 }
 
 export async function postBasketballPrediction(req: Request, res: Response): Promise<void> {
-  if (!req.body || typeof req.body !== "object") {
-    throw new HttpError(400, "Invalid JSON body");
-  }
-
-  let prompt: string = (req.body as { prompt?: unknown }).prompt as string;
-  if (typeof prompt !== "string" || !prompt.trim()) {
-    const basketballData = await fetchBasketballTab({ start: formatBasketballTabStart() });
-    prompt = buildTodayTomorrowBasketballPrompt(basketballData);
-  }
-
-  if (!prompt.trim()) {
-    throw new HttpError(400, "No basketball matches found for today");
-  }
-
-  const cachedResult = await getCachedBasketballPrediction(prompt);
-  if (cachedResult) {
-    const parsedContent = JSON.parse(cachedResult);
-    res.json({
-      ok: true,
-      cached: true,
-      content: applyRequestMatchIdsToPredictionContent(parsedContent, prompt.trim()),
-    });
-    return;
-  }
-
-  const system = (req.body as { system?: unknown }).system;
-  if (system !== undefined && (typeof system !== "string" || !system.trim())) {
-    throw new HttpError(400, "system must be a non-empty string when provided");
-  }
-
-  const model = parseOptionalModel(req.body) ?? env.predictionVectorEngineModel;
-
-  const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
-  messages.push({
-    role: "system",
-    content: typeof system === "string" && system.trim() ? system.trim() : DEFAULT_BASKETBALL_SYSTEM,
-  });
-  messages.push({ role: "user", content: prompt.trim() });
-
-  const { content, model: usedModel } = await vectorEngineChat({ messages, model });
-
-  let parsedContent: unknown;
-  try {
-    parsedContent = JSON.parse(content);
-  } catch {
-    parsedContent = content;
-  }
-
-  await cacheBasketballPrediction(prompt, content);
-
-  res.json({
-    ok: true,
-    cached: false,
-    model: usedModel,
-    content: applyRequestMatchIdsToPredictionContent(parsedContent, prompt.trim()),
-  });
+  const result = await executeBasketballPrediction({ body: req.body });
+  res.json(result);
 }
 
-/** 旅游攻略：固定旅行规划师 system，用户消息传目的地/天数/预算等 */
-export async function postTravelGuide(req: Request, res: Response): Promise<void> {
-  if (!req.body || typeof req.body !== "object") {
+/** 与 `executeTravelGuide` 相同的入参校验（不调用模型），供异步提交时立即返回 400 */
+export function assertTravelGuideRequestBody(body: unknown): void {
+  if (!body || typeof body !== "object") {
     throw new HttpError(400, "Invalid JSON body");
   }
-  const prompt = (req.body as { prompt?: unknown }).prompt;
+  const prompt = (body as { prompt?: unknown }).prompt;
   if (typeof prompt !== "string" || !prompt.trim()) {
     throw new HttpError(400, "prompt must be a non-empty string");
   }
 
-  const system = (req.body as { system?: unknown }).system;
+  const system = (body as { system?: unknown }).system;
   if (system !== undefined && (typeof system !== "string" || !system.trim())) {
     throw new HttpError(400, "system must be a non-empty string when provided");
   }
+}
 
-  const model = parseOptionalModel(req.body) ?? env.travelGuideVectorEngineModel;
+/** 旅游攻略：与 `postTravelGuide` 相同入参校验与模型调用，供同步接口与异步任务共用 */
+export async function executeTravelGuide(
+  body: unknown,
+  options?: { signal?: AbortSignal }
+): Promise<{ model: string; content: unknown }> {
+  assertTravelGuideRequestBody(body);
+
+  const prompt = (body as { prompt: string }).prompt.trim();
+  const system = (body as { system?: unknown }).system;
+  const model = parseOptionalModel(body) ?? env.travelGuideVectorEngineModel;
 
   const messages: Array<{ role: "system" | "user" | "assistant"; content: string }> = [];
   messages.push({
     role: "system",
     content: typeof system === "string" && system.trim() ? system.trim() : DEFAULT_TRAVEL_SYSTEM,
   });
-  messages.push({ role: "user", content: prompt.trim() });
+  messages.push({ role: "user", content: prompt });
 
-  const { content, model: usedModel } = await vectorEngineChat({ messages, model });
+  const { content, model: usedModel } = await vectorEngineChat({
+    messages,
+    model,
+    signal: options?.signal,
+  });
 
   const parsedContent = normalizeTravelGuideListFields(parseModelJsonOutput(content));
 
+  return { model: usedModel, content: parsedContent };
+}
+
+/** 旅游攻略：固定旅行规划师 system，用户消息传目的地/天数/预算等 */
+export async function postTravelGuide(req: Request, res: Response): Promise<void> {
+  const { model, content } = await executeTravelGuide(req.body);
+
   res.json({
     ok: true,
-    model: usedModel,
-    content: parsedContent,
+    model,
+    content,
   });
+}
+
+/**
+ * 异步提交旅游攻略生成，立即返回 `jobId`；客户端建议每 **8 秒** 调用 `GET /api/ai/travel-guide/jobs/:jobId` 轮询直至 `status` 为 `completed`、`failed` 或 `cancelled`。
+ */
+export async function postTravelGuideAsync(req: Request, res: Response): Promise<void> {
+  const userId = req.authUser?.userId;
+  if (!userId) {
+    throw new HttpError(401, "Unauthorized");
+  }
+  const body = req.body;
+  assertTravelGuideRequestBody(body);
+  const jobId = startTravelGuideJob(userId, (signal) => executeTravelGuide(body, { signal }));
+  res.json({ ok: true, jobId });
+}
+
+/** 查询异步旅游攻略任务状态；`completed` 时 `model`/`content` 与同步 `POST /travel-guide` 成功响应一致 */
+export async function getTravelGuideJob(req: Request, res: Response): Promise<void> {
+  const userId = req.authUser?.userId;
+  if (!userId) {
+    throw new HttpError(401, "Unauthorized");
+  }
+  const jobId = req.params.jobId;
+  if (typeof jobId !== "string" || !jobId.trim()) {
+    throw new HttpError(400, "jobId required");
+  }
+
+  const job = getTravelGuideJobForUser(jobId.trim(), userId);
+  if (!job) {
+    throw new HttpError(404, "Job not found");
+  }
+
+  if (job.status === "pending") {
+    res.json({ ok: true, status: "pending" as const });
+    return;
+  }
+  if (job.status === "completed") {
+    res.json({
+      ok: true,
+      status: "completed" as const,
+      model: job.model!,
+      content: job.content!,
+    });
+    return;
+  }
+  if (job.status === "cancelled") {
+    res.json({ ok: true, status: "cancelled" as const });
+    return;
+  }
+  res.json({
+    ok: true,
+    status: "failed" as const,
+    error: job.error ?? "Unknown error",
+    details: job.details,
+    httpStatus: job.httpStatus,
+  });
+}
+
+/** 取消异步旅游攻略任务（仅 `pending` 有效；会中止上游 Vector Engine 请求） */
+export async function postTravelGuideJobCancel(req: Request, res: Response): Promise<void> {
+  const userId = req.authUser?.userId;
+  if (!userId) {
+    throw new HttpError(401, "Unauthorized");
+  }
+  const jobId = req.params.jobId;
+  if (typeof jobId !== "string" || !jobId.trim()) {
+    throw new HttpError(400, "jobId required");
+  }
+
+  const result = cancelTravelGuideJob(jobId.trim(), userId);
+  if (result.outcome === "not_found") {
+    throw new HttpError(404, "Job not found");
+  }
+  if (result.outcome === "not_pending") {
+    throw new HttpError(409, "Job is not pending", { status: result.status });
+  }
+  res.json({ ok: true, cancelled: true });
 }
 
 /** 单轮对话：前端只需传 prompt（可选 system / model） */

@@ -65,74 +65,15 @@ export async function fetchFootballList(params: DongqiudiParams): Promise<Dongqi
   return data;
 }
 
-interface MatchItem {
-  id?: number | string;
-  left_name?: string;
-  right_name?: string;
-  league_name?: string;
-  match_time?: string | number;
-  status?: number | string;
-  [key: string]: unknown;
-}
-
-function isTodayOrTomorrow(timestamp: number): boolean {
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-
-  const matchDate = new Date(timestamp * 1000);
-
-  return matchDate >= today && matchDate < tomorrow && matchDate.getHours() >= 0 && matchDate.getHours() < 24;
-}
-
-function formatMatchItem(item: MatchItem, index: number): string {
-  const n = item.id ?? index + 1;
-  const leftName = item.left_name ?? "未知球队";
-  const rightName = item.right_name ?? "未知球队";
-  const leagueName = item.league_name ?? "未知联赛";
-  const matchTime = item.match_time
-    ? new Date(Number(item.match_time) * 1000).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" })
-    : "未知时间";
-
-  return `比赛${n}（match_id=${n}）：\n${leftName} vs ${rightName}｜${leagueName}｜${matchTime}`;
-}
-
-export function buildTodayTomorrowPrompt(footballData: unknown): string {
-  if (!footballData || typeof footballData !== "object") {
-    return "";
-  }
-
-  const dataObj = footballData as { list?: unknown[]; matches?: unknown[]; data?: unknown[] };
-
-  let matchList: unknown[] = [];
-
-  if (Array.isArray(dataObj.list)) {
-    matchList = dataObj.list;
-  } else if (Array.isArray(dataObj.matches)) {
-    matchList = dataObj.matches;
-  } else if (Array.isArray(dataObj.data)) {
-    matchList = dataObj.data;
-  } else if (Array.isArray(dataObj)) {
-    matchList = dataObj as unknown[];
-  }
-
-  const todayTomorrowMatches = matchList.filter((item) => {
-    if (!item || typeof item !== "object") return false;
-    const matchItem = item as MatchItem;
-    if (typeof matchItem.match_time === "number") {
-      return isTodayOrTomorrow(matchItem.match_time);
-    }
-    return false;
-  });
-
-  if (todayTomorrowMatches.length === 0) {
-    return "";
-  }
-
-  return todayTomorrowMatches
-    .map((item, index) => formatMatchItem(item as MatchItem, index))
-    .join("\n\n");
+/** 懂球帝 tab `start` 参数格式：`YYYY-MM-DDHH:mm:ss`（日与小时之间无分隔） */
+export function formatFootballTabStart(d = new Date()): string {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const h = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  const s = String(d.getSeconds()).padStart(2, "0");
+  return `${y}-${mo}-${day}${h}:${mi}:${s}`;
 }
 
 export interface TransformedMatch {
