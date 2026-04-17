@@ -26,5 +26,17 @@ model FootballPredictionCache {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([prompt])
+  @@index([createdAt])
+}
+
+model BasketballPredictionCache {
+  id        String   @id @default(cuid())
+  prompt    String
+  result    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([prompt])
   @@index([createdAt])
 }

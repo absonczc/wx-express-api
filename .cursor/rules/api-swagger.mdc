@@ -1,0 +1,37 @@
+---
+description: 新增或修改 HTTP 接口时同步更新 Swagger / OpenAPI 文档，并对请求体与响应字段逐项说明
+alwaysApply: true
+---
+
+# API 与 Swagger 同步
+
+在**新增、修改、重命名或删除** Express 对外路由（含路径、方法、查询/路径参数、请求体、鉴权、成功/错误响应结构）时，**必须同一批改动内**同步更新 OpenAPI（Swagger），避免 `/api-docs` 与真实接口脱节。仅改实现不改契约时可只更新与行为相关的文档描述。
+
+## 必做项
+
+1. **路由文件**（`src/modules/**/*.routes.ts`）  
+   为对应路由补充或修改紧邻的 `@swagger` 注释块：`summary`、`description`、`tags`、`security`（公开接口写 `security: []`）、`parameters` / `requestBody`、`responses`（含 4xx）。  
+   文档里的**完整路径**须与 `src/routes/index.ts` 中的挂载一致（例如 `apiRouter.use("/basketball", …)` 则文档路径以 `/api/basketball` 开头，以项目里全局 `servers` + 前缀为准）。
+
+2. **全局 schema**（`src/config/swagger.ts`）  
+   若响应或请求有稳定、可描述的结构，在 `components.schemas` 中新增或更新定义，并在路由 `@swagger` 里用 `$ref: '#/components/schemas/…'` 引用。上游 JSON 不固定时，可用 `additionalProperties: true` 并在 `description` 中说明数据来源。
+
+3. **响应字段说明（必做）**  
+   对客户端会依赖的**成功响应体**字段写清含义，便于对接与排错：
+   - 使用 `$ref` 到 schema 时：在 `components.schemas` 里为**每个重要属性**写 `description`（含义、单位、枚举值、可选/必有、与业务规则相关的约束）。
+   - 若某层是对象/数组嵌套：对嵌套对象的**关键子字段**同样写 `description`，避免只描述最外层。
+   - 若响应是包装格式（如 `{ code, message, data }`）：分别说明 `code` / `message` / `data` 的语义；`data` 为业务体时用独立 schema 并逐项说明。
+   - 错误响应（4xx/5xx）在对应 `responses` 条目或共用 error schema 中说明典型 `message` 或错误码含义（若有）。
+
+4. **请求体字段说明（必做）**  
+   凡接口带 `requestBody`（JSON、`multipart`、urlencoded 等），对调用方需要传入的字段**逐项**写清含义，与响应说明同一标准：
+   - 使用 `$ref` 到 schema 时：在 `components.schemas` 里为**每个重要属性**写 `description`（含义、单位、枚举值、可选/必有、默认值、与校验/业务相关的约束）。
+   - 嵌套对象/数组：对**关键子字段**同样写 `description`；数组项为对象时说明数组元素对象各字段。
+   - `multipart` 的每个 `part`（文件字段与普通字段）均应有说明：文件名/用途、允许类型与大小限制（若接口有约定）。
+   - 与 `parameters`（query/path/header）中客户端需理解的项：同样在对应 parameter 或共用 schema 的 `description` 中写清。
+
+5. **删除接口**时，删除对应 `@swagger` 块，并移除 `swagger.ts` 中不再被引用的 schema（避免死文档）。
+
+## 自检
+
+项目使用 `swagger-jsdoc`，`apis` 已包含 `./src/**/*.routes.ts`；改完后可本地启动服务打开 Swagger UI，确认新路径出现在文档中且示例合理；展开**请求体**与**响应** schema，确认主要字段均有可读的中文（或项目约定语言）说明。
