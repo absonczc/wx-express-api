@@ -1,15 +1,9 @@
 import { env } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import { HttpError } from "../../middleware/error.middleware.js";
-import {
-  buildBasketballPredictionJsonPrompt,
-  buildFootballPredictionJsonPrompt,
-} from "../../utils/prediction-prompt-json.js";
-import {
-  fetchBasketballTab,
-  formatBasketballTabStart,
-} from "../basketball/basketball.service.js";
-import { fetchFootballList, formatFootballTabStart } from "../football/football.service.js";
+import { buildBasketballPredictionJsonPrompt, buildFootballPredictionJsonPrompt } from "../../utils/prediction-prompt-json.js";
+import { fetchBasketballTabForPrediction } from "../basketball/basketball.service.js";
+import { fetchFootballListForPrediction } from "../football/football.service.js";
 import {
   cacheBasketballPrediction,
   cachePrediction,
@@ -22,9 +16,10 @@ import { vectorEngineChat } from "./vectorengine.service.js";
 
 export type PredictionExecuteResult = {
   ok: true;
-  /** 始终为 true：内容来自数据库中该 prompt 的最新一条 */
+  /** 恒为 true：内容来自对应缓存表按 `createdAt` 降序的第一条 */
   cached: true;
-  /** 本条缓存记录的写入时间（ISO 8601） */
+  /** 本条缓存行写入时间（ISO 8601），与 `cacheCreatedAt` 相同 */
+  createdAt: string;
   cacheCreatedAt: string;
   content: unknown;
 };
@@ -35,27 +30,9 @@ export async function executeFootballPrediction(params: { body: unknown }): Prom
     throw new HttpError(400, "Invalid JSON body");
   }
 
-  let prompt = (body as { prompt?: unknown }).prompt;
-  let promptStr = typeof prompt === "string" ? prompt.trim() : "";
-
-  if (!promptStr) {
-    const footballData = await fetchFootballList({ start: formatFootballTabStart() });
-    promptStr = buildFootballPredictionJsonPrompt(footballData);
-  }
-
-  if (!promptStr) {
-    throw new HttpError(400, "No football matches found for today and tomorrow (not started)");
-  }
-
-  logger.info(`Football prediction API: prompt length=${promptStr.length} chars`);
-  logger.debug(`Football prediction API prompt:\n${promptStr}`);
-
-  const row = await getLatestFootballPredictionCache(promptStr);
+  const row = await getLatestFootballPredictionCache();
   if (!row) {
-    throw new HttpError(
-      404,
-      "暂无足球预测缓存，请等待定时任务写入数据库后重试"
-    );
+    throw new HttpError(404, "暂无足球预测缓存，请等待定时任务写入数据库后重试");
   }
 
   let parsedContent: unknown;
@@ -67,11 +44,13 @@ export async function executeFootballPrediction(params: { body: unknown }): Prom
     });
   }
 
+  const createdAt = row.createdAt.toISOString();
   return {
     ok: true,
     cached: true,
-    cacheCreatedAt: row.createdAt.toISOString(),
-    content: applyRequestMatchIdsToPredictionContent(parsedContent, promptStr),
+    createdAt,
+    cacheCreatedAt: createdAt,
+    content: applyRequestMatchIdsToPredictionContent(parsedContent, row.prompt),
   };
 }
 
@@ -81,24 +60,9 @@ export async function executeBasketballPrediction(params: { body: unknown }): Pr
     throw new HttpError(400, "Invalid JSON body");
   }
 
-  let prompt = (body as { prompt?: unknown }).prompt;
-  let promptStr = typeof prompt === "string" ? prompt.trim() : "";
-
-  if (!promptStr) {
-    const basketballData = await fetchBasketballTab({ start: formatBasketballTabStart() });
-    promptStr = buildBasketballPredictionJsonPrompt(basketballData);
-  }
-
-  if (!promptStr) {
-    throw new HttpError(400, "No basketball matches found for today and tomorrow (not started)");
-  }
-
-  const row = await getLatestBasketballPredictionCache(promptStr);
+  const row = await getLatestBasketballPredictionCache();
   if (!row) {
-    throw new HttpError(
-      404,
-      "暂无篮球预测缓存，请等待定时任务写入数据库后重试"
-    );
+    throw new HttpError(404, "暂无篮球预测缓存，请等待定时任务写入数据库后重试");
   }
 
   let parsedContent: unknown;
@@ -110,11 +74,13 @@ export async function executeBasketballPrediction(params: { body: unknown }): Pr
     });
   }
 
+  const createdAt = row.createdAt.toISOString();
   return {
     ok: true,
     cached: true,
-    cacheCreatedAt: row.createdAt.toISOString(),
-    content: applyRequestMatchIdsToPredictionContent(parsedContent, promptStr),
+    createdAt,
+    cacheCreatedAt: createdAt,
+    content: applyRequestMatchIdsToPredictionContent(parsedContent, row.prompt),
   };
 }
 
@@ -123,7 +89,7 @@ export async function executeBasketballPrediction(params: { body: unknown }): Pr
  * @returns 是否已向 `FootballPredictionCache` 写入新行（赛程筛出 0 场时直接跳过，不调模型）
  */
 export async function runFootballPredictionWarmup(): Promise<boolean> {
-  const footballData = await fetchFootballList({ start: formatFootballTabStart() });
+  const footballData = await fetchFootballListForPrediction();
   const promptStr = buildFootballPredictionJsonPrompt(footballData);
   if (!promptStr) {
     logger.info(
@@ -153,7 +119,7 @@ export async function runFootballPredictionWarmup(): Promise<boolean> {
  * @returns 是否已向 `BasketballPredictionCache` 写入新行
  */
 export async function runBasketballPredictionWarmup(): Promise<boolean> {
-  const basketballData = await fetchBasketballTab({ start: formatBasketballTabStart() });
+  const basketballData = await fetchBasketballTabForPrediction();
   const promptStr = buildBasketballPredictionJsonPrompt(basketballData);
   if (!promptStr) {
     logger.info(

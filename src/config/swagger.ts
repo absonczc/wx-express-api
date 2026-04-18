@@ -103,7 +103,10 @@ const options: swaggerJsdoc.Options = {
             team_B_logo: { type: "string", description: "客队 logo URL" },
             date_utc: { type: "string", description: "比赛日 UTC 日期" },
             time_utc: { type: "string", description: "开赛 UTC 时间" },
-            start_play: { type: "string", description: "开赛时间（展示用字符串）" },
+            start_play: {
+              type: "string",
+              description: "开赛时间：懂球帝 tab 多为 **UTC** 无时区 `YYYY-MM-DD HH:mm:ss`；本服务预测/列表按 UTC 解析后再用北京时间展示",
+            },
             sort_timestamp: { type: "integer", description: "排序用 Unix 时间戳（秒）" },
             status: { type: "string", description: "状态，如 Played、Playing、Scheduled" },
             fs_A: { type: "string", description: "主队全场得分" },
@@ -188,7 +191,10 @@ const options: swaggerJsdoc.Options = {
             team_A: { $ref: "#/components/schemas/DongqiudiSituationTeam" },
             team_B: { $ref: "#/components/schemas/DongqiudiSituationTeam" },
             venue: { type: "object", additionalProperties: true },
-            start_play: { type: "string", description: "开赛时间" },
+            start_play: {
+              type: "string",
+              description: "开赛时间（UTC 无时区字符串，见足球列表 `start_play` 说明）",
+            },
             end_play: { type: "string", description: "结束时间" },
             status: { type: "string", description: "Played、Playing 等" },
             period: { type: "string", description: "阶段，如 FT、Q1" },
@@ -332,7 +338,10 @@ const options: swaggerJsdoc.Options = {
                       competition_id: { type: "string", description: "联赛ID" },
                       competition_name: { type: "string", description: "联赛名称" },
                       competition_color: { type: "string", description: "联赛颜色" },
-                      start_play: { type: "string", description: "比赛开始时间" },
+                      start_play: {
+                        type: "string",
+                        description: "比赛开始时间（懂球帝多为 UTC 无时区字符串；预测按 UTC 解析）",
+                      },
                       sort_timestamp: { type: "integer", description: "比赛时间戳" },
                       status: { type: "string", description: "比赛状态，如 Played、Scheduled" },
                       fs_A: { type: "string", description: "球队A全场比分" },
@@ -673,7 +682,7 @@ const options: swaggerJsdoc.Options = {
             prompt: {
               type: "string",
               description:
-                "比赛信息（可选）。不传或空字符串时服务端从懂球帝拉取赛程并自动生成 JSON 数组字符串：筛选「北京时间今天、明天、且未开赛」的场次，按开赛时间升序**最多取 30 场**，字段 home、away、time（北京时间）、match_id。",
+                "可选；**HTTP 预测接口不参与查库**：固定返回 `FootballPredictionCache` 中 `createdAt` 最新一行。定时任务写入时按懂球帝足球 tab **多页合并**（`nextDate`，最多 6 页）再生成 JSON：仅用 **`start_play`（UTC 无时区字符串）** 解析为瞬间，再按 **北京时间** 筛今明两天、未开赛；`time` 为北京时间。按开赛升序纳入**全部**满足场次（无 `start_play` 或无法解析则跳过；含 home、away、time、match_id）。",
               example:
                 '[{"home":"吉达国民","away":"柔佛新山","time":"2026-04-17 22:45:00","match_id":"54440340"}]',
             },
@@ -694,17 +703,23 @@ const options: swaggerJsdoc.Options = {
             ok: { type: "boolean", example: true },
             cached: {
               type: "boolean",
-              description: "恒为 true：内容来自 `FootballPredictionCache` 中该请求 `prompt`（与库内 `promptHash`/全文一致）的 `createdAt` 最新一条",
+              description: "恒为 true：内容来自 `FootballPredictionCache` 全表按 `createdAt` 降序第一条",
               example: true,
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              description:
+                "本条缓存行写入时间：库内为 `TIMESTAMPTZ`（UTC 瞬间），接口为 ISO 8601（通常带 `Z`）；与 `cacheCreatedAt` 相同。需按北京时间展示时在客户端用 `Asia/Shanghai` 格式化。",
             },
             cacheCreatedAt: {
               type: "string",
               format: "date-time",
-              description: "本条缓存记录的创建时间（ISO 8601），便于确认是否为库中最新写入",
+              description: "同 `createdAt`，兼容旧字段名",
             },
             content: {
               description:
-                "库中存储的模型输出 JSON（已解析为对象）。成功解析且含 `matches` 时：服务端按本次请求 `prompt` 中 match_id 顺序重排（支持旧版「（match_id=…）」文本或 JSON 数组每项的 `match_id`），并将每条 `match_id` 强制为 prompt 中的原样字符串；`n`、`title` 与输出顺序一致（比赛1、比赛2…）。",
+                "库中该条 `result` 解析后的 JSON。成功解析且含 `matches` 时：按**该条缓存记录**的 `prompt` 中 match_id 顺序重排（支持旧版「（match_id=…）」或 JSON 数组每项的 `match_id`），每条 `match_id` 与库内 `prompt` 原样一致；`n`、`title` 与输出顺序一致（比赛1、比赛2…）。",
               oneOf: [{ type: "object", additionalProperties: true }, { type: "string" }],
             },
           },
@@ -715,7 +730,7 @@ const options: swaggerJsdoc.Options = {
             prompt: {
               type: "string",
               description:
-                "比赛信息（可选）。不传或空字符串时服务端从懂球帝篮球 tab 拉取赛程并自动生成与足球接口一致的 JSON 数组字符串（今天、明天、未开赛，按开赛时间升序**最多 30 场**）。",
+                "可选；**HTTP 预测接口不参与查库**：固定返回 `BasketballPredictionCache` 中 `createdAt` 最新一行。定时任务写入时与足球一致：篮球 tab **多页合并**（`nextDate`，最多 6 页），`start_play` 按 **UTC** 解析，筛北京时间今明未开赛，`time` 为北京时间（无或不可解析则跳过）。",
               example:
                 '[{"home":"湖人","away":"勇士","time":"2026-04-17 10:30:00","match_id":"54439749"}]',
             },
@@ -735,17 +750,23 @@ const options: swaggerJsdoc.Options = {
             ok: { type: "boolean", example: true },
             cached: {
               type: "boolean",
-              description: "恒为 true：内容来自 `BasketballPredictionCache` 中该请求 `prompt`（与库内 `promptHash`/全文一致）的 `createdAt` 最新一条",
+              description: "恒为 true：内容来自 `BasketballPredictionCache` 全表按 `createdAt` 降序第一条",
               example: true,
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              description:
+                "本条缓存行写入时间：库内为 `TIMESTAMPTZ`（UTC 瞬间），接口为 ISO 8601（通常带 `Z`）；与 `cacheCreatedAt` 相同。需按北京时间展示时在客户端用 `Asia/Shanghai` 格式化。",
             },
             cacheCreatedAt: {
               type: "string",
               format: "date-time",
-              description: "本条缓存记录的创建时间（ISO 8601）",
+              description: "同 `createdAt`，兼容旧字段名",
             },
             content: {
               description:
-                "库中存储的模型输出：约定为 JSON，含 `matches[]`（每场 `yuce`：shengfu、rangfenshengfu、daxiaofen、shengfencha、danshuangpan、xinxinzhishu）及 `jinrixuan`、`lengmen`、`chuanguan`。成功解析且含 `matches` 时：服务端按本次请求 `prompt` 中 match_id 顺序重排（旧版多行或 JSON 数组）；每条 `match_id` 与 prompt 原样一致；`n`、`title` 与顺序一致。",
+                "库中该条 `result` 解析后的 JSON：含 `matches[]`（每场 `yuce`：shengfu、rangfenshengfu、daxiaofen、shengfencha、danshuangpan、xinxinzhishu）及 `jinrixuan`、`lengmen`、`chuanguan`。成功解析且含 `matches` 时：按**该条缓存记录**的 `prompt` 中 match_id 顺序重排；每条 `match_id` 与库内 `prompt` 原样一致；`n`、`title` 与顺序一致。",
               oneOf: [{ type: "object", additionalProperties: true }, { type: "string" }],
             },
           },

@@ -1,10 +1,10 @@
+import { kickoffUnixSecForPredictionMatch } from "./dongqiudi-start-play.js";
+
 /**
  * 足/篮预测：从懂球帝 tab 原始体筛选「北京时间今天、明天、且未开赛」的场次，拼成模型 user 消息（JSON 数组字符串）。
- * 按开赛时间升序后最多取前 {@link MAX_PREDICTION_PROMPT_MATCHES} 场，避免列表过长拖垮大模型请求。
+ * 开赛时间：**仅** `start_play` / `startPlay`（懂球帝为 **UTC** 无时区字符串 → Unix 秒，再按北京时间筛今明、未开赛）；无有效字段则跳过该场。
+ * 按开赛时间升序，**全部**纳入 prompt（无条数上限）。
  */
-
-/** 自动拼 prompt 时纳入的最大场次数（足球/篮球共用） */
-export const MAX_PREDICTION_PROMPT_MATCHES = 30;
 
 export type PredictionMatchPromptItem = {
   home: string;
@@ -27,9 +27,8 @@ function todayYmdChina(): string {
   return new Date().toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);
 }
 
-function tomorrowYmdChina(): string {
-  const t = todayYmdChina();
-  const [y, m, d] = t.split("-").map(Number);
+function tomorrowYmdFromTodayYmd(todayYmd: string): string {
+  const [y, m, d] = todayYmd.split("-").map(Number);
   const noon = new Date(
     `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}T12:00:00+08:00`
   );
@@ -41,11 +40,6 @@ function ymdChinaFromTsSec(tsSec: number): string {
   return new Date(tsSec * 1000).toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" }).slice(0, 10);
 }
 
-function isTodayOrTomorrowShanghai(tsSec: number): boolean {
-  const ymd = ymdChinaFromTsSec(tsSec);
-  return ymd === todayYmdChina() || ymd === tomorrowYmdChina();
-}
-
 function isNotStarted(tsSec: number): boolean {
   return tsSec * 1000 > Date.now();
 }
@@ -53,31 +47,6 @@ function isNotStarted(tsSec: number): boolean {
 /** 北京时间 `YYYY-MM-DD HH:mm:ss`（与懂球帝 H5 展示一致） */
 function formatShanghaiYmdHms(tsSec: number): string {
   return new Date(tsSec * 1000).toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
-}
-
-function getTimestampSec(item: Record<string, unknown>): number | null {
-  const st = item.sort_timestamp;
-  if (typeof st === "number" && st > 0) {
-    return st;
-  }
-  const sp = item.start_play;
-  if (typeof sp === "string" && sp) {
-    const match = sp.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
-    if (match) {
-      const [, y, mo, d, h, mi, s] = match;
-      return Math.floor(
-        Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)) / 1000
-      );
-    }
-  }
-  const mt = item.match_time;
-  if (typeof mt === "number") {
-    return mt;
-  }
-  if (typeof mt === "string" && /^\d+$/.test(mt)) {
-    return Number(mt);
-  }
-  return null;
 }
 
 function getHomeAway(item: Record<string, unknown>): { home: string; away: string } {
@@ -101,14 +70,17 @@ function getMatchId(item: Record<string, unknown>, index: number): string {
 
 function buildItemsFromList(matchList: unknown[]): PredictionMatchPromptItem[] {
   const rows: Array<{ ts: number; item: PredictionMatchPromptItem }> = [];
+  const todayYmd = todayYmdChina();
+  const tomorrowYmd = tomorrowYmdFromTodayYmd(todayYmd);
 
   for (let i = 0; i < matchList.length; i++) {
     const row = matchList[i];
     if (!row || typeof row !== "object" || Array.isArray(row)) continue;
     const raw = row as Record<string, unknown>;
-    const ts = getTimestampSec(raw);
+    const ts = kickoffUnixSecForPredictionMatch(raw);
     if (ts === null) continue;
-    if (!isTodayOrTomorrowShanghai(ts)) continue;
+    const ymd = ymdChinaFromTsSec(ts);
+    if (ymd !== todayYmd && ymd !== tomorrowYmd) continue;
     if (!isNotStarted(ts)) continue;
 
     const { home, away } = getHomeAway(raw);
@@ -124,7 +96,7 @@ function buildItemsFromList(matchList: unknown[]): PredictionMatchPromptItem[] {
   }
 
   rows.sort((a, b) => a.ts - b.ts);
-  return rows.slice(0, MAX_PREDICTION_PROMPT_MATCHES).map((r) => r.item);
+  return rows.map((r) => r.item);
 }
 
 /** 足球：懂球帝 `data/tab/new/soccer` 原始体 */

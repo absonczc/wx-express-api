@@ -1,4 +1,5 @@
 import { logger } from "../../lib/logger.js";
+import { dongqiudiTabStartFromNextDate } from "../../utils/dongqiudi-tab-next-start.js";
 
 const DONGQIUDI_BASKETBALL_TAB_URL = "https://api.dongqiudi.com/data/tab/new/basketball";
 const DONGQIUDI_MATCH_SITUATION_URL = "https://api.dongqiudi.com/mobile/match/situation";
@@ -69,6 +70,37 @@ export async function fetchBasketballTab(
   return data;
 }
 
+/** 预测预热：合并多页篮球 tab */
+const BASKETBALL_PREDICTION_TAB_MAX_PAGES = 6;
+
+export async function fetchBasketballTabForPrediction(): Promise<DongqiudiBasketballTabResponse> {
+  const merged: unknown[] = [];
+  const seen = new Set<string>();
+  let start = formatBasketballTabStart();
+
+  for (let page = 0; page < BASKETBALL_PREDICTION_TAB_MAX_PAGES; page++) {
+    const res = await fetchBasketballTab({ start });
+    const batch = Array.isArray(res.list) ? res.list : [];
+    for (const row of batch) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const rec = row as Record<string, unknown>;
+      const rt = rec.relate_type;
+      if (rt !== undefined && rt !== null && rt !== "" && rt !== "match") continue;
+      const id = String(rec.match_id ?? rec.relate_id ?? "").trim();
+      const key = id || `idx:${merged.length}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(row);
+    }
+    const nextStart = dongqiudiTabStartFromNextDate(res.nextDate);
+    if (!nextStart || nextStart === start) break;
+    start = nextStart;
+  }
+
+  logger.info(`Basketball prediction tab merged: ${merged.length} matches (up to ${BASKETBALL_PREDICTION_TAB_MAX_PAGES} pages)`);
+  return { list: merged };
+}
+
 /** 与 H5 一致，用于比赛态势、赛前数据对比等移动端接口 */
 const BASKETBALL_MATCH_MOBILE_HEADERS: Record<string, string> = {
   ...BASKETBALL_TAB_HEADERS,
@@ -98,15 +130,13 @@ async function fetchJsonOrThrow(url: string, label: string): Promise<unknown> {
   return response.json() as Promise<unknown>;
 }
 
-/** 懂球帝 tab `start` 参数格式：`YYYY-MM-DDHH:mm:ss`（日与小时之间无分隔） */
+/**
+ * 懂球帝 tab `start` 参数格式：`YYYY-MM-DDHH:mm:ss`（日与小时之间无分隔）。
+ * 使用 **Asia/Shanghai** 墙钟，与 `buildBasketballPredictionJsonPrompt` 中「今明两天」筛选一致。
+ */
 export function formatBasketballTabStart(d = new Date()): string {
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  const s = String(d.getSeconds()).padStart(2, "0");
-  return `${y}-${mo}-${day}${h}:${mi}:${s}`;
+  const s = d.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
+  return `${s.slice(0, 10)}${s.slice(11, 19)}`;
 }
 
 /**

@@ -1,4 +1,6 @@
 import { logger } from "../../lib/logger.js";
+import { dongqiudiTabStartFromNextDate } from "../../utils/dongqiudi-tab-next-start.js";
+import { dongqiudiTabStartPlayToUnixSec, parseUnknownEpochToUnixSec } from "../../utils/dongqiudi-start-play.js";
 
 const DONGQIUDI_API_URL = "https://api.dongqiudi.com/data/tab/new/soccer";
 
@@ -65,15 +67,44 @@ export async function fetchFootballList(params: DongqiudiParams): Promise<Dongqi
   return data;
 }
 
-/** 懂球帝 tab `start` 参数格式：`YYYY-MM-DDHH:mm:ss`（日与小时之间无分隔） */
+/** 预测预热：合并多页 tab（`nextDate` 链），避免单页漏赛；与 H5 下拉加载行为一致 */
+const FOOTBALL_PREDICTION_TAB_MAX_PAGES = 6;
+
+export async function fetchFootballListForPrediction(): Promise<DongqiudiResponse> {
+  const merged: unknown[] = [];
+  const seen = new Set<string>();
+  let start = formatFootballTabStart();
+
+  for (let page = 0; page < FOOTBALL_PREDICTION_TAB_MAX_PAGES; page++) {
+    const res = await fetchFootballList({ start });
+    const batch = Array.isArray(res.list) ? res.list : [];
+    for (const row of batch) {
+      if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+      const rec = row as Record<string, unknown>;
+      const rt = rec.relate_type;
+      if (rt !== undefined && rt !== null && rt !== "" && rt !== "match") continue;
+      const id = String(rec.match_id ?? rec.relate_id ?? "").trim();
+      const key = id || `idx:${merged.length}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(row);
+    }
+    const nextStart = dongqiudiTabStartFromNextDate(res.nextDate);
+    if (!nextStart || nextStart === start) break;
+    start = nextStart;
+  }
+
+  logger.info(`Football prediction tab merged: ${merged.length} matches (up to ${FOOTBALL_PREDICTION_TAB_MAX_PAGES} pages)`);
+  return { list: merged };
+}
+
+/**
+ * 懂球帝 tab `start` 参数格式：`YYYY-MM-DDHH:mm:ss`（日与小时之间无分隔）。
+ * 使用 **Asia/Shanghai** 墙钟，与 `buildFootballPredictionJsonPrompt` 中「今明两天」筛选一致（不随服务器系统时区漂移）。
+ */
 export function formatFootballTabStart(d = new Date()): string {
-  const y = d.getFullYear();
-  const mo = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const h = String(d.getHours()).padStart(2, "0");
-  const mi = String(d.getMinutes()).padStart(2, "0");
-  const s = String(d.getSeconds()).padStart(2, "0");
-  return `${y}-${mo}-${day}${h}:${mi}:${s}`;
+  const s = d.toLocaleString("sv-SE", { timeZone: "Asia/Shanghai" });
+  return `${s.slice(0, 10)}${s.slice(11, 19)}`;
 }
 
 export interface TransformedMatch {
@@ -782,41 +813,24 @@ interface DongqiudiMatchItem {
   [key: string]: unknown;
 }
 
-function convertToChinaTime(dateStr: string): string {
+/** `start_play` 按 UTC 解析后，用 Asia/Shanghai 格式化为北京时间展示串 */
+function formatStartPlayShanghai(dateStr: string): string {
   if (!dateStr) return "";
-
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) return dateStr;
-
-  return date.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
-}
-
-function parseUtcToChinaTime(dateStr: string): string {
-  if (!dateStr) return "";
-
-  const match = dateStr.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})$/);
-  if (!match) return dateStr;
-
-  const [, year, month, day, hour, minute, second] = match;
-  const utcDate = new Date(Date.UTC(
-    Number(year),
-    Number(month) - 1,
-    Number(day),
-    Number(hour),
-    Number(minute),
-    Number(second)
-  ));
-
-  return utcDate.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+  const ts = dongqiudiTabStartPlayToUnixSec(dateStr);
+  if (ts === null) return dateStr;
+  return new Date(ts * 1000).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
 }
 
 function transformMatchItem(item: DongqiudiMatchItem): TransformedMatch {
   let matchTime = "";
 
   if (item.start_play) {
-    matchTime = parseUtcToChinaTime(item.start_play);
-  } else if (item.sort_timestamp) {
-    matchTime = convertToChinaTime(new Date(Number(item.sort_timestamp) * 1000).toISOString());
+    matchTime = formatStartPlayShanghai(item.start_play);
+  } else if (item.sort_timestamp !== undefined && item.sort_timestamp !== null) {
+    const tsSec = parseUnknownEpochToUnixSec(item.sort_timestamp as unknown);
+    if (tsSec !== null) {
+      matchTime = new Date(tsSec * 1000).toLocaleString("zh-CN", { timeZone: "Asia/Shanghai" });
+    }
   }
 
   const score = item.fs_A && item.fs_B
