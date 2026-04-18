@@ -71,8 +71,8 @@ export const env = {
     }
     return 3;
   })(),
-  /** 旅游攻略：未传 body `model` 时使用；默认 gpt-5.4-nano */
-  travelGuideVectorEngineModel: process.env.TRAVEL_GUIDE_VECTOR_ENGINE_MODEL?.trim() ?? "gpt-5.4-nano",
+  /** 旅游攻略：未传 body `model` 时使用；默认 `qwen3.5-plus`（与控制台模型广场 ID 一致；定价页关键词 Qwen3.5-Plus：https://api.vectorengine.ai/pricing?keyword=Qwen3.5-Plus ） */
+  travelGuideVectorEngineModel: process.env.TRAVEL_GUIDE_VECTOR_ENGINE_MODEL?.trim() ?? "qwen3.5-plus",
   /** 足/篮预测定时预热：默认开启；设为 `false` 时不启动定时任务 */
   predictionScheduleEnabled: process.env.PREDICTION_SCHEDULE_ENABLED?.trim() !== "false",
   /** 足/篮预测定时预热间隔（毫秒），默认 6 小时；最小 60 秒 */

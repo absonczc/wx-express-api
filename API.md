@@ -178,11 +178,11 @@
 ```json
 {
   "prompt": "北京3天2晚，2人，中等预算，偏美食和人文",
-  "model": "gpt-5.4-nano"
+  "model": "qwen3.5-plus"
 }
 ```
 
-说明：响应中的 `content` 为结构化 JSON 对象（不是纯文本）。
+说明：响应中的 `content` 为结构化 JSON 对象（不是纯文本）。未传 `model` 时默认 **`qwen3.5-plus`**（与控制台模型 ID 一致；展示名见 https://api.vectorengine.ai/pricing?keyword=Qwen3.5-Plus ）。可用 `TRAVEL_GUIDE_VECTOR_ENGINE_MODEL` 覆盖。
 
 ### `POST /api/ai/football-prediction`（需鉴权）
 

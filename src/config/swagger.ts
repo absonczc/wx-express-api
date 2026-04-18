@@ -502,8 +502,8 @@ const options: swaggerJsdoc.Options = {
             model: {
               type: "string",
               description:
-                "模型名（可选）。不传时使用环境变量 `TRAVEL_GUIDE_VECTOR_ENGINE_MODEL`，未配置则默认 **`gpt-5.4-nano`**（与通用 `VECTOR_ENGINE_MODEL`、足篮预测模型独立）。传入则覆盖。",
-              example: "gpt-5.4-nano",
+                "模型名（可选）。不传时使用环境变量 `TRAVEL_GUIDE_VECTOR_ENGINE_MODEL`，未配置则默认 **`qwen3.5-plus`**（定价展示名 Qwen3.5-Plus：https://api.vectorengine.ai/pricing?keyword=Qwen3.5-Plus ；与通用 `VECTOR_ENGINE_MODEL`、足篮预测模型独立）。**务必与控制台「模型广场」中的 model ID 完全一致**（大小写敏感），不一致时用本字段或环境变量覆盖。",
+              example: "qwen3.5-plus",
             },
           },
         },
@@ -561,14 +561,14 @@ const options: swaggerJsdoc.Options = {
             ok: { type: "boolean", example: true },
             model: {
               type: "string",
-              description: "本轮 Vector Engine 实际使用的模型名（未传 body `model` 时默认 gpt-5.4-nano）",
-              example: "gpt-5.4-nano",
+              description: "本轮 Vector Engine 实际使用的模型名（未传 body `model` 时默认 qwen3.5-plus）",
+              example: "qwen3.5-plus",
             },
             content: { $ref: "#/components/schemas/TravelGuideContent" },
           },
           example: {
             ok: true,
-            model: "gpt-5.4-nano",
+            model: "qwen3.5-plus",
             content: {
               day_1: {
                 schedule: ["上午：伏见稻荷", "下午：清水寺周边", "晚上：祇园散步"],

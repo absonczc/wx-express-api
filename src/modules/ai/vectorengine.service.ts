@@ -111,10 +111,20 @@ export async function vectorEngineChat(params: {
     const msg =
       raw.error?.message ??
       (typeof raw === "object" && raw !== null ? JSON.stringify(raw) : `HTTP ${res.status}`);
-    throw new HttpError(502, "Vector Engine request failed", {
-      upstreamStatus: res.status,
-      upstream: msg,
-    });
+    const hint =
+      typeof msg === "string" && msg.length > 0
+        ? msg.length > 400
+          ? `${msg.slice(0, 400)}…`
+          : msg
+        : undefined;
+    throw new HttpError(
+      502,
+      hint ? `Vector Engine request failed: ${hint}` : "Vector Engine request failed",
+      {
+        upstreamStatus: res.status,
+        upstream: msg,
+      }
+    );
   }
 
   const content = raw.choices?.[0]?.message?.content;

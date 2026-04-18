@@ -84,7 +84,7 @@ aiRouter.post("/prompt", authRequired, asyncHandler(postAiPrompt));
  *   post:
  *     summary: 旅游行程攻略（固定旅行规划师 + 结构化 JSON 响应）
  *     description: |
- *       **调用方式**：与 `POST /api/ai/prompt` 相同，经 Vector Engine（OpenAI 兼容 Chat）生成内容；须配置环境变量 `VECTOR_ENGINE_API_KEY`。未传 body `model` 时本接口默认 **`gpt-5.4-nano`**（可用 `TRAVEL_GUIDE_VECTOR_ENGINE_MODEL` 覆盖，与 `VECTOR_ENGINE_MODEL`、足篮预测默认值独立）。
+ *       **调用方式**：与 `POST /api/ai/prompt` 相同，经 Vector Engine（OpenAI 兼容 Chat）生成内容；须配置环境变量 `VECTOR_ENGINE_API_KEY`。未传 body `model` 时本接口默认 **`qwen3.5-plus`**（对应定价展示名 [Qwen3.5-Plus](https://api.vectorengine.ai/pricing?keyword=Qwen3.5-Plus)；以控制台模型广场中的 **model ID** 为准，可用 `TRAVEL_GUIDE_VECTOR_ENGINE_MODEL` 覆盖，与 `VECTOR_ENGINE_MODEL`、足篮预测默认值独立）。
  *
  *       **默认 system（服务端内置，可被 `system` 字段覆盖）**：模型扮演专业旅行规划师；用户需在 `prompt` 中提供行程参数。规划要求包括：
  *       - 每日须覆盖：行程安排（上/下午/晚）、景点（名称+简介+建议时长）、餐厅（店名+菜+人均）、住宿（酒店+位置+价位）、交通（A→B）。
@@ -117,7 +117,7 @@ aiRouter.post("/prompt", authRequired, asyncHandler(postAiPrompt));
  *                 summary: 京都三日示例（节选）
  *                 value:
  *                   ok: true
- *                   model: gpt-5.4-nano
+ *                   model: qwen3.5-plus
  *                   content:
  *                     day_1:
  *                       schedule: 上午… 下午… 晚上…
