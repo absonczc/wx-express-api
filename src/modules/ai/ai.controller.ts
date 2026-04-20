@@ -1,5 +1,7 @@
 import type { Request, Response } from "express";
+import type { Prisma } from "@prisma/client";
 import { env } from "../../config/env.js";
+import { prisma } from "../../lib/prisma.js";
 import { HttpError } from "../../middleware/error.middleware.js";
 import { executeBasketballPrediction, executeFootballPrediction } from "./prediction-execute.service.js";
 import {
@@ -147,21 +149,62 @@ const DEFAULT_TRAVEL_SYSTEM = `你是一名专业旅行规划师，请为我制�
 预算范围：（例如中等/人均XXX元）- 请求的参数
 旅行偏好：（例如美食/拍照/自然风景/文化/轻松/特种兵）- 请求的参数
 
-请按“每天行程”详细规划，并满足以下要求：
+请按每天输出行程，并严格按照以下格式：
 
-【每日结构必须包含】
-1. 行程安排（上午 / 下午 / 晚上）
-2. 景点推荐（具体名称 + 简要介绍 + 建议游玩时间）
-3. 餐厅推荐（具体门店名称 + 推荐菜 + 人均价格）
-4. 住宿推荐（酒店名称 + 位置优势 + 价格区间）
-5. 交通建议（如何从A到B）
+【每日行程】
+
+Day X：
+
+上午：
+- 景点名称：
+- 简要介绍：
+- 建议游玩时间：
+- 经纬度：（纬度, 经度）
+- 景点图片：（请提供真实图片URL链接）
+
+下午：
+- 景点名称：
+- 简要介绍：
+- 建议游玩时间：
+- 经纬度：（纬度, 经度）
+- 景点图片：（请提供真实图片URL链接）
+
+晚上：
+- 景点名称：
+- 简要介绍：
+- 建议游玩时间：
+- 经纬度：（纬度, 经度）
+- 景点图片：（请提供真实图片URL链接）
+
+🍽 餐厅推荐：
+- 餐厅名称（具体门店）：
+- 地址：
+- 人均价格：
+- 推荐菜：
+- 经纬度：（纬度, 经度）
+- 景点图片：（请提供真实图片URL链接）
+
+🏨 住宿推荐：
+- 酒店名称：
+- 地址：
+- 价格区间：
+- 推荐理由：
+- 经纬度：（纬度, 经度）
+- 景点图片：（请提供真实图片URL链接）
+
+🚗 交通安排：
+- 从A到B的方式 + 时间
 
 【额外要求】
-- 优先推荐高评分、本地人常去的餐厅
-- 避免过于紧凑，保证行程合理不赶
-- 标注每个地点之间的大致距离或时间
-- 给出地图动线（顺路安排）
-- 提供1-2个备选方案（如下雨/人多时替代）
+1. 所有景点必须提供准确经纬度（Google Maps可用）
+2. 所有图片必须为真实可访问的URL（非虚构）
+3. 餐厅必须是具体门店（避免泛泛推荐）
+4. 行程安排要合理，尽量顺路
+5. 不要编造不存在的地点或店铺
+6.优先推荐高评分、本地人常去的餐厅
+7.避免过于紧凑，保证行程合理不赶
+8.标注每个地点之间的大致距离或时间
+9.提供1-2个备选方案（如下雨/人多时替代）
 
 【最终总结】
 - 总预算预估
@@ -172,46 +215,92 @@ const DEFAULT_TRAVEL_SYSTEM = `你是一名专业旅行规划师，请为我制�
 餐厅尽量选择在小红书推荐/大众点评评分较高的具体门店。
 住宿优先推荐交通便利区域（靠近地铁/市中心）。
 给出出发地 到 目的地的 通行方案和方式
+如果无法确保图片URL真实有效，请直接说明并不给出虚假链接。
+经纬度请尽量基于真实地图数据。
 
-【输出要求（必须遵守）】
+【输出要求】
+- 请输出“完整JSON格式”，不要输出额外解释文字。
 - 只输出一个合法 JSON 对象，可被 JSON.parse 直接解析
-- 不要使用 Markdown 代码围栏（不要用三个反引号包裹）
-- 不要在 JSON 前后输出任何说明文字、前缀或后缀
-- **分点、分条必须用 JSON 数组**：凡是用「1.」「2.」「3.」或「1、」「2、」「3、」或「一、」「二、」或「-」等列举的多条内容，在 JSON 里**必须**写成字符串数组 \`["第一条","第二条",…]\`，数组每一项对应一个分点；不要把多条压在同一段字符串里用换行或序号硬拼（除非整段只有一句、确实没有并列分点，才可使用单个 string）
-- 涉及字段：每个 \`day_*\` 内的 \`schedule\`、\`attractions\`、\`restaurants\`、\`hotels\`、\`transportation\`，以及根级的 \`total_budget\`、\`top_3\`、\`avoid_tips\`、\`map_line\`、\`alternative_plan\`、\`rain_plan\` —— 只要存在 2 条及以上并列信息，一律用 string[]；例如上午/下午/晚上三段 → schedule 用三个元素的数组；必去 TOP3 → top_3 用三个元素的数组
-- 若误用多行单 string 输出分点，接口会在含换行时尽量拆成数组，但仍请你直接输出数组以符合约定
+- 不要添加解释
+- 不要使用Markdown格式
 - 文案可以带emoji
+JSON结构如下：
 
-输出的格式为（注意数组写法）：
 {
-	"day_1": {
-		"schedule": ["上午：…", "下午：…", "晚上：…"],
-		"attractions": ["景点一：…", "景点二：…"],
-		"restaurants": ["餐厅A：…", "餐厅B：…"],
-		"hotels": ["酒店说明一条即可"],
-		"transportation": ["A→B：…", "B→C：…"]
-	},
-	"day_2": {
-		"schedule": ["上午：…", "下午：…", "晚上：…"],
-		"attractions": ["…"],
-		"restaurants": ["…"],
-		"hotels": ["…"],
-		"transportation": ["…"]
-	},
-	"day_3": {
-		"schedule": ["…", "…", "…"],
-		"attractions": ["…"],
-		"restaurants": ["…"],
-		"hotels": ["…"],
-		"transportation": ["…"]
-	},
-	"total_budget": ["机酒合计：…", "餐饮门票：…"],
-	"top_3": ["第一名：…", "第二名：…", "第三名：…"],
-	"avoid_tips": ["避坑一：…", "避坑二：…"],
-	"map_line": ["D1 动线：…", "D2 动线：…"],
-	"alternative_plan": ["人多时：…"],
-	"rain_plan": ["雨天方案：…"]
+  "destination": "",
+  "days": [
+    {
+      "day": 1,
+      "schedule": [
+        {
+          "time": "morning/afternoon/evening",
+          "spot_name": "",
+          "description": "",
+          "latitude": "",
+          "longitude": "",
+          "address": "",
+          "recommended_duration": "",
+          "image_url": ""
+        }
+      ],
+      "food": [
+        {
+          "restaurant_name": "",
+          "branch": "",
+          "address": "",
+          "avg_price": "",
+          "recommended_dishes": [],
+          "description": "",
+          "latitude": "",
+          "longitude": "",
+          "image_url": ""
+        }
+      ],
+      "hotel": {
+        "name": "",
+        "address": "",
+        "price_range": "",
+        "reason": "",
+        "description": "",
+        "latitude": "",
+        "longitude": "",
+        "image_url": ""
+      },
+      "transport": [
+        {
+          "from": "",
+          "to": "",
+          "method": "",
+          "duration": ""
+        }
+      ]
+    }
+  ],
+  "summary": {
+    "estimated_budget": "",
+    "top3_must_visit": [],
+    "tips": [],
+    "alternatives": []
+  }
 }
+
+【严格要求】
+1. 所有景点必须提供：
+   - 准确名称
+   - 经纬度（latitude / longitude）
+   - 真实地址
+2. 图片要求：
+   - image_url必须为真实可访问链接（优先Unsplash / 官方网站 / 维基）
+   - 如果不确定，请返回："image_url": null（禁止编造）
+3. 餐厅要求：
+   - 必须是“具体门店”（例如：某某餐厅 + 分店）
+4. 行程安排：
+   - 合理、不赶路、尽量顺路
+5. 数据真实性：
+   - 禁止编造不存在的地点、餐厅或酒店
+6. 如果信息不确定：
+   - 对应字段返回 null，而不是猜测
+
 `
 ;
 
@@ -273,12 +362,213 @@ export async function executeTravelGuide(
 /** 旅游攻略：固定旅行规划师 system，用户消息传目的地/天数/预算等 */
 export async function postTravelGuide(req: Request, res: Response): Promise<void> {
   const { model, content } = await executeTravelGuide(req.body);
+  const prompt = (req.body as { prompt: string }).prompt;
+  const requestParams = parseTravelGuidePromptParams(prompt);
 
   res.json({
     ok: true,
     model,
+    requestParams,
     content,
   });
+}
+
+function parseOptionalTextField(value: unknown, fieldName: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new HttpError(400, `${fieldName} must be a non-empty string when provided`);
+  }
+  return value.trim();
+}
+
+type TravelGuidePromptParams = {
+  departure: string | null;
+  destination: string | null;
+  travelDays: string | null;
+  travelTime: string | null;
+  travelers: string | null;
+  budget: string | null;
+  preferences: string | null;
+};
+
+function parseTravelGuidePromptParams(prompt: string): TravelGuidePromptParams {
+  const params: TravelGuidePromptParams = {
+    departure: null,
+    destination: null,
+    travelDays: null,
+    travelTime: null,
+    travelers: null,
+    budget: null,
+    preferences: null,
+  };
+
+  const segments = prompt
+    .split(/[；;]/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+
+  for (const segment of segments) {
+    const match = segment.match(/^([^:：]+)[:：]\s*(.+)$/);
+    if (!match) continue;
+    const rawKey = match[1].replace(/\s+/g, "");
+    const value = match[2].trim();
+    if (!value) continue;
+
+    if (rawKey.includes("出发地")) {
+      params.departure = value;
+      continue;
+    }
+    if (rawKey.includes("目的地")) {
+      params.destination = value;
+      continue;
+    }
+    if (rawKey.includes("出行天数") || rawKey === "天数") {
+      params.travelDays = value;
+      continue;
+    }
+    if (rawKey.includes("出行时间") || rawKey === "时间") {
+      params.travelTime = value;
+      continue;
+    }
+    if (rawKey.includes("人数")) {
+      params.travelers = value;
+      continue;
+    }
+    if (rawKey.includes("预算")) {
+      params.budget = value;
+      continue;
+    }
+    if (rawKey.includes("偏好")) {
+      params.preferences = value;
+    }
+  }
+
+  return params;
+}
+
+function parsePositiveIntQuery(value: unknown, defaultValue: number, fieldName: string): number {
+  if (value === undefined) return defaultValue;
+  if (typeof value !== "string" || !value.trim()) {
+    throw new HttpError(400, `${fieldName} must be a positive integer`);
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new HttpError(400, `${fieldName} must be a positive integer`);
+  }
+  return parsed;
+}
+
+/**
+ * 保存旅游策略方案到数据库（与用户绑定）。
+ * 入参结构与 `GET /api/ai/travel-guide/jobs/{jobId}` 在 `status=completed` 时返回的 `content` 一致。
+ */
+export async function postTravelStrategyPlanSave(req: Request, res: Response): Promise<void> {
+  const userId = req.authUser?.userId;
+  if (!userId) {
+    throw new HttpError(401, "Unauthorized");
+  }
+  if (!req.body || typeof req.body !== "object" || Array.isArray(req.body)) {
+    throw new HttpError(400, "Request body must be a JSON object");
+  }
+
+  const saved = await prisma.travelStrategyPlan.create({
+    data: {
+      userId,
+      content: req.body as Prisma.InputJsonValue,
+    },
+  });
+
+  res.json({
+    ok: true,
+    id: saved.id,
+    createdAt: saved.createdAt,
+  });
+}
+
+/** 获取当前用户保存的旅游策略方案列表（按创建时间倒序） */
+export async function getMyTravelStrategyPlans(req: Request, res: Response): Promise<void> {
+  const userId = req.authUser?.userId;
+  if (!userId) {
+    throw new HttpError(401, "Unauthorized");
+  }
+
+  const page = parsePositiveIntQuery(req.query.page, 1, "page");
+  const pageSize = parsePositiveIntQuery(req.query.pageSize, 10, "pageSize");
+  const normalizedPageSize = Math.min(pageSize, 50);
+  const skip = (page - 1) * normalizedPageSize;
+
+  const [total, items] = await Promise.all([
+    prisma.travelStrategyPlan.count({ where: { userId } }),
+    prisma.travelStrategyPlan.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      skip,
+      take: normalizedPageSize,
+      select: {
+        id: true,
+        content: true,
+        createdAt: true,
+        updatedAt: true,
+      },
+    }),
+  ]);
+
+  res.json({
+    ok: true,
+    page,
+    pageSize: normalizedPageSize,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / normalizedPageSize)),
+    items,
+  });
+}
+
+/** 获取当前用户单条旅游策略方案详情 */
+export async function getMyTravelStrategyPlanDetail(req: Request, res: Response): Promise<void> {
+  const userId = req.authUser?.userId;
+  if (!userId) {
+    throw new HttpError(401, "Unauthorized");
+  }
+  const id = parseOptionalTextField(req.params.id, "id");
+  if (!id) {
+    throw new HttpError(400, "id required");
+  }
+
+  const plan = await prisma.travelStrategyPlan.findFirst({
+    where: { id, userId },
+    select: {
+      id: true,
+      content: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+  if (!plan) {
+    throw new HttpError(404, "Plan not found");
+  }
+
+  res.json({ ok: true, plan });
+}
+
+/** 删除当前用户单条旅游策略方案 */
+export async function deleteMyTravelStrategyPlan(req: Request, res: Response): Promise<void> {
+  const userId = req.authUser?.userId;
+  if (!userId) {
+    throw new HttpError(401, "Unauthorized");
+  }
+  const id = parseOptionalTextField(req.params.id, "id");
+  if (!id) {
+    throw new HttpError(400, "id required");
+  }
+
+  const deleted = await prisma.travelStrategyPlan.deleteMany({
+    where: { id, userId },
+  });
+  if (deleted.count === 0) {
+    throw new HttpError(404, "Plan not found");
+  }
+
+  res.json({ ok: true, deleted: true, id });
 }
 
 /**

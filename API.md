@@ -177,12 +177,92 @@
 
 ```json
 {
-  "prompt": "北京3天2晚，2人，中等预算，偏美食和人文",
+  "prompt": "目的地：万宁日月湾；出发地：顺德；出行天数：4天3晚；出行时间：4月；人数：2人；预算：10000-12000元；偏好：冲浪、海景拍照、美食",
   "model": "qwen3.5-plus"
 }
 ```
 
-说明：响应中的 `content` 为结构化 JSON 对象（不是纯文本）。未传 `model` 时默认 **`qwen3.5-plus`**（与控制台模型 ID 一致；展示名见 https://api.vectorengine.ai/pricing?keyword=Qwen3.5-Plus ）。可用 `TRAVEL_GUIDE_VECTOR_ENGINE_MODEL` 覆盖。
+成功响应示例：
+
+```json
+{
+  "ok": true,
+  "model": "qwen3.5-plus",
+  "requestParams": {
+    "departure": "顺德",
+    "destination": "万宁日月湾",
+    "travelDays": "4天3晚",
+    "travelTime": "4月",
+    "travelers": "2人",
+    "budget": "10000-12000元",
+    "preferences": "冲浪、海景拍照、美食"
+  },
+  "content": {
+    "destination": "万宁日月湾",
+    "days": [
+      {
+        "day": 1,
+        "schedule": [
+          {
+            "time": "morning",
+            "spot_name": "广州白云国际机场",
+            "description": "出发地集散枢纽，从顺德前往广州乘机",
+            "latitude": "23.3924",
+            "longitude": "113.2988",
+            "address": "广东省广州市白云区机场大道",
+            "recommended_duration": "2 小时",
+            "image_url": null
+          }
+        ],
+        "food": [
+          {
+            "restaurant_name": "216 Beach Bar & Restaurant",
+            "branch": "日月湾店",
+            "address": "海南省万宁市礼纪镇日月湾新区",
+            "avg_price": "150 元/人",
+            "recommended_dishes": ["汉堡", "意面", "热带果汁"],
+            "description": "日月湾知名冲浪文化餐厅",
+            "latitude": "18.7540",
+            "longitude": "110.5545",
+            "image_url": null
+          }
+        ],
+        "hotel": {
+          "name": "万宁日月湾格罗姆冲浪酒店",
+          "address": "海南省万宁市礼纪镇日月湾新区",
+          "price_range": "800-1200 元/晚",
+          "reason": "位于湾区核心，冲浪氛围浓厚，交通便利",
+          "description": "本地知名冲浪主题酒店",
+          "latitude": "18.7538",
+          "longitude": "110.5542",
+          "image_url": null
+        },
+        "transport": [
+          {
+            "from": "顺德",
+            "to": "广州白云国际机场",
+            "method": "驾车/顺风车",
+            "duration": "1 小时"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "estimated_budget": "10000-12000 元（2 人，含机票、住宿、餐饮、交通）",
+      "top3_must_visit": ["日月湾海滩（冲浪与日落）", "兴隆热带植物园（文化与自然）", "石梅湾（最美公路拍照）"],
+      "tips": ["4 月海南紫外线较强，请做好防晒措施", "建议租车自驾，万宁景点间公共交通不便"],
+      "alternatives": ["若遇下雨：改为参观兴隆咖啡谷室内展馆或前往万宁市区商场"]
+    }
+  }
+}
+```
+
+说明：
+
+- `requestParams` 为服务端从 `prompt` 按 `；` 分段、按 `键:值` 提取的参数对象；固定返回 7 个字段，缺失值为 `null`
+- `content` 为结构化旅游方案对象，核心结构是 `destination + days[] + summary`
+- `days[]` 内含 `schedule[]`（时段行程）、`food[]`（餐饮推荐）、`hotel`（住宿）、`transport[]`（交通段）
+- 未传 `model` 时默认 **`qwen3.5-plus`**（与控制台 model ID 一致）；可用 `TRAVEL_GUIDE_VECTOR_ENGINE_MODEL` 覆盖
 
 ### `POST /api/ai/football-prediction`（需鉴权）
 

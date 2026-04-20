@@ -7,6 +7,10 @@ import {
   postFootballPrediction,
   postBasketballPrediction,
   postTravelGuide,
+  postTravelStrategyPlanSave,
+  getMyTravelStrategyPlans,
+  getMyTravelStrategyPlanDetail,
+  deleteMyTravelStrategyPlan,
   postTravelGuideAsync,
   getTravelGuideJob,
   postTravelGuideJobCancel,
@@ -106,7 +110,8 @@ aiRouter.post("/prompt", authRequired, asyncHandler(postAiPrompt));
  *     responses:
  *       200:
  *         description: |
- *           成功：`content` 为已解析的攻略对象（见 `TravelGuideContent` / `TravelGuideDay`）。
+ *           成功：`requestParams` 为从 `prompt` 解析出的请求参数（出发地、目的地、出行天数、出行时间、人数、预算、偏好）；
+ *           `content` 为已解析的攻略对象（见 `TravelGuideContent` / `TravelGuideDay`）。
  *           完整响应结构见 `TravelGuideResponse`（含 `example`）。
  *         content:
  *           application/json:
@@ -118,19 +123,56 @@ aiRouter.post("/prompt", authRequired, asyncHandler(postAiPrompt));
  *                 value:
  *                   ok: true
  *                   model: qwen3.5-plus
+ *                   requestParams:
+ *                     departure: 上海
+ *                     destination: 日本京都
+ *                     travelDays: 3天2晚
+ *                     travelTime: 2026年5月
+ *                     travelers: 2人夫妻
+ *                     budget: 人均预算约4000元
+ *                     preferences: 美食、古建筑与轻松节奏
  *                   content:
- *                     day_1:
- *                       schedule: 上午… 下午… 晚上…
- *                       attractions: 景点文字说明
- *                       restaurants: 餐厅文字说明
- *                       hotels: 住宿文字说明
- *                       transportation: 交通文字说明
- *                     total_budget: 两人约 … 元
- *                     top_3: 必去三处摘要
- *                     avoid_tips: 避坑摘要
- *                     map_line: 动线摘要
- *                     alternative_plan: 备选摘要
- *                     rain_plan: 雨天备选摘要
+ *                     destination: 万宁日月湾
+ *                     days:
+ *                       - day: 1
+ *                         schedule:
+ *                           - time: morning
+ *                             spot_name: 广州白云国际机场
+ *                             description: 出发地集散枢纽，从顺德前往广州乘机
+ *                             latitude: "23.3924"
+ *                             longitude: "113.2988"
+ *                             address: 广东省广州市白云区机场大道
+ *                             recommended_duration: 2 小时
+ *                             image_url: null
+ *                         food:
+ *                           - restaurant_name: 216 Beach Bar & Restaurant
+ *                             branch: 日月湾店
+ *                             address: 海南省万宁市礼纪镇日月湾新区
+ *                             avg_price: 150 元/人
+ *                             recommended_dishes: [汉堡, 意面, 热带果汁]
+ *                             description: 日月湾知名冲浪文化餐厅
+ *                             latitude: "18.7540"
+ *                             longitude: "110.5545"
+ *                             image_url: null
+ *                         hotel:
+ *                           name: 万宁日月湾格罗姆冲浪酒店
+ *                           address: 海南省万宁市礼纪镇日月湾新区
+ *                           price_range: 800-1200 元/晚
+ *                           reason: 位于湾区核心，冲浪氛围浓厚，交通便利
+ *                           description: 本地知名冲浪主题酒店
+ *                           latitude: "18.7538"
+ *                           longitude: "110.5542"
+ *                           image_url: null
+ *                         transport:
+ *                           - from: 顺德
+ *                             to: 广州白云国际机场
+ *                             method: 驾车/顺风车
+ *                             duration: 1 小时
+ *                     summary:
+ *                       estimated_budget: 10000-12000 元（2 人）
+ *                       top3_must_visit: [日月湾海滩, 兴隆热带植物园, 石梅湾]
+ *                       tips: [注意防晒, 建议租车自驾]
+ *                       alternatives: [下雨可改室内行程]
  *       400:
  *         description: JSON Body 非法、`prompt` 非非空字符串、或 `system` 传入但为空字符串
  *         content:
@@ -151,6 +193,164 @@ aiRouter.post("/prompt", authRequired, asyncHandler(postAiPrompt));
  *               $ref: '#/components/schemas/HttpErrorBody'
  */
 aiRouter.post("/travel-guide", authRequired, asyncHandler(postTravelGuide));
+
+/**
+ * @swagger
+ * /api/ai/travel-guide/plans-save:
+ *   post:
+ *     summary: 保存旅游策略方案到数据库
+ *     description: |
+ *       将旅游攻略方案落库，并与当前登录用户绑定。
+ *       **请求体结构应与** `GET /api/ai/travel-guide/jobs/{jobId}` 在 `status=completed` 时返回的 `content` 对象一致（也即同步接口 `POST /api/ai/travel-guide` 返回体中的 `content`）。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/TravelGuideContent'
+ *     responses:
+ *       200:
+ *         description: 保存成功（生成并返回方案 id）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TravelStrategyPlanSaveResponse'
+ *       400:
+ *         description: 请求参数非法（请求体不是 JSON 对象）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ *       401:
+ *         description: 未授权
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ */
+aiRouter.post("/travel-guide/plans-save", authRequired, asyncHandler(postTravelStrategyPlanSave));
+
+/**
+ * @swagger
+ * /api/ai/travel-guide/plans-list:
+ *   get:
+ *     summary: 获取我的旅游策略方案列表
+ *     description: 返回当前登录用户保存的分页方案列表，按创建时间倒序。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *         description: 页码（从 1 开始）
+ *       - in: query
+ *         name: pageSize
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 10
+ *           maximum: 50
+ *         description: 每页条数（最大 50，超出会被截断为 50）
+ *     responses:
+ *       200:
+ *         description: 查询成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TravelStrategyPlanListResponse'
+ *       401:
+ *         description: 未授权
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ */
+aiRouter.get("/travel-guide/plans-list", authRequired, asyncHandler(getMyTravelStrategyPlans));
+
+/**
+ * @swagger
+ * /api/ai/travel-guide/plans-detail/{id}:
+ *   get:
+ *     summary: 获取我的旅游策略方案详情
+ *     description: 按 id 查询当前登录用户的一条方案；不存在或无权访问时返回 404（不区分）。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 方案 ID
+ *     responses:
+ *       200:
+ *         description: 查询成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TravelStrategyPlanDetailResponse'
+ *       401:
+ *         description: 未授权
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ *       404:
+ *         description: 方案不存在或无权访问
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ */
+aiRouter.get("/travel-guide/plans-detail/:id", authRequired, asyncHandler(getMyTravelStrategyPlanDetail));
+
+/**
+ * @swagger
+ * /api/ai/travel-guide/plans-delete/{id}:
+ *   delete:
+ *     summary: 删除我的旅游策略方案
+ *     description: 按 id 删除当前登录用户的一条方案；不存在或无权访问时返回 404（不区分）。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: 方案 ID
+ *     responses:
+ *       200:
+ *         description: 删除成功
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/TravelStrategyPlanDeleteResponse'
+ *       401:
+ *         description: 未授权
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ *       404:
+ *         description: 方案不存在或无权访问
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/HttpErrorBody'
+ */
+aiRouter.delete("/travel-guide/plans-delete/:id", authRequired, asyncHandler(deleteMyTravelStrategyPlan));
 
 /**
  * @swagger

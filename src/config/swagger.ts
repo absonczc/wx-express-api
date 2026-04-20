@@ -507,56 +507,275 @@ const options: swaggerJsdoc.Options = {
             },
           },
         },
-        TravelGuideTextField: {
-          oneOf: [
-            {
-              type: "string",
-              description: "仅一条、无并列分点时的整段文本",
-            },
-            {
-              type: "array",
-              items: { type: "string" },
-              description:
-                "模型应按 system 要求对 1.2.3. / 1、2、等多分点直接使用数组；若误用多行 string，服务端会按行拆成数组",
-            },
-          ],
-          description:
-            "用于 `day_*` 的 schedule 等五字段，以及根级 total_budget、top_3、avoid_tips、map_line、alternative_plan、rain_plan",
-        },
-        TravelGuideDay: {
+        TravelGuidePromptParams: {
           type: "object",
           description:
-            "单日行程块。键名为 `day_1`、`day_2`…（可有 `day_4` 等）。字段 schedule / attractions / restaurants / hotels / transportation：凡有 1.2.3. 或并列多分点，模型应直接输出 string[]；仅一句可用 string；含换行单 string 时服务端会拆成 string[]。",
+            "从 `prompt` 中按 `；`/`;` 分段，并按 `键:值`（支持中文冒号）解析出的关键请求参数；缺失或未识别到时返回 null。",
+          required: [
+            "departure",
+            "destination",
+            "travelDays",
+            "travelTime",
+            "travelers",
+            "budget",
+            "preferences",
+          ],
+          additionalProperties: false,
           properties: {
-            schedule: { $ref: "#/components/schemas/TravelGuideTextField" },
-            attractions: { $ref: "#/components/schemas/TravelGuideTextField" },
-            restaurants: { $ref: "#/components/schemas/TravelGuideTextField" },
-            hotels: { $ref: "#/components/schemas/TravelGuideTextField" },
-            transportation: { $ref: "#/components/schemas/TravelGuideTextField" },
+            departure: {
+              type: "string",
+              nullable: true,
+              description: "出发地（从 `出发地:...` 片段提取；示例：上海）",
+            },
+            destination: {
+              type: "string",
+              nullable: true,
+              description: "目的地（从 `目的地:...` 片段提取；示例：日本京都）",
+            },
+            travelDays: {
+              type: "string",
+              nullable: true,
+              description: "出行天数（从 `出行天数:...` 或 `天数:...` 片段提取；示例：3天2晚）",
+            },
+            travelTime: {
+              type: "string",
+              nullable: true,
+              description: "出行时间（从 `出行时间:...` 或 `时间:...` 片段提取；示例：2026年5月）",
+            },
+            travelers: {
+              type: "string",
+              nullable: true,
+              description: "人数（从包含 `人数` 的片段提取；示例：2人夫妻）",
+            },
+            budget: {
+              type: "string",
+              nullable: true,
+              description: "预算（从包含 `预算` 的片段提取；示例：人均约4000元）",
+            },
+            preferences: {
+              type: "string",
+              nullable: true,
+              description: "偏好（从包含 `偏好` 的片段提取；示例：美食、古建筑、轻松节奏）",
+            },
           },
+        },
+        TravelGuideScheduleItem: {
+          type: "object",
+          required: [
+            "time",
+            "spot_name",
+            "description",
+            "latitude",
+            "longitude",
+            "address",
+            "recommended_duration",
+            "image_url",
+          ],
+          description: "单个时段行程点（上午/下午/晚上）。",
+          properties: {
+            time: {
+              type: "string",
+              description: "时段标识，常见值：`morning`、`afternoon`、`evening`。",
+              example: "morning",
+            },
+            spot_name: {
+              type: "string",
+              description: "景点或地点名称。",
+              example: "日月湾海滩",
+            },
+            description: {
+              type: "string",
+              description: "该时段活动说明与推荐理由。",
+            },
+            latitude: {
+              type: "string",
+              description: "纬度（字符串形式，便于原样透传）。",
+              example: "18.7536",
+            },
+            longitude: {
+              type: "string",
+              description: "经度（字符串形式，便于原样透传）。",
+              example: "110.5539",
+            },
+            address: {
+              type: "string",
+              description: "详细地址。",
+            },
+            recommended_duration: {
+              type: "string",
+              description: "建议停留时长。",
+              example: "2 小时",
+            },
+            image_url: {
+              type: "string",
+              nullable: true,
+              description: "图片 URL；无法保证真实可用时返回 null。",
+            },
+          },
+          additionalProperties: true,
+        },
+        TravelGuideFoodItem: {
+          type: "object",
+          required: [
+            "restaurant_name",
+            "branch",
+            "address",
+            "avg_price",
+            "recommended_dishes",
+            "description",
+            "latitude",
+            "longitude",
+            "image_url",
+          ],
+          description: "单条餐饮推荐。",
+          properties: {
+            restaurant_name: { type: "string", description: "餐厅名称。" },
+            branch: { type: "string", description: "门店/分店名称。" },
+            address: { type: "string", description: "餐厅地址。" },
+            avg_price: { type: "string", description: "人均价格描述。", example: "150 元/人" },
+            recommended_dishes: {
+              type: "array",
+              description: "推荐菜列表。",
+              items: { type: "string" },
+            },
+            description: { type: "string", description: "推荐理由与特点说明。" },
+            latitude: { type: "string", description: "纬度（字符串）。" },
+            longitude: { type: "string", description: "经度（字符串）。" },
+            image_url: {
+              type: "string",
+              nullable: true,
+              description: "图片 URL；无法保证真实可用时返回 null。",
+            },
+          },
+          additionalProperties: true,
+        },
+        TravelGuideHotel: {
+          type: "object",
+          required: [
+            "name",
+            "address",
+            "price_range",
+            "reason",
+            "description",
+            "latitude",
+            "longitude",
+            "image_url",
+          ],
+          description: "当日住宿建议。",
+          properties: {
+            name: { type: "string", description: "酒店名称。" },
+            address: { type: "string", description: "酒店地址。" },
+            price_range: { type: "string", description: "价格区间描述。", example: "800-1200 元/晚" },
+            reason: { type: "string", description: "推荐理由（位置、交通、氛围等）。" },
+            description: { type: "string", description: "酒店补充介绍。" },
+            latitude: { type: "string", description: "纬度（字符串）。" },
+            longitude: { type: "string", description: "经度（字符串）。" },
+            image_url: {
+              type: "string",
+              nullable: true,
+              description: "图片 URL；无法保证真实可用时返回 null。",
+            },
+          },
+          additionalProperties: true,
+        },
+        TravelGuideTransportItem: {
+          type: "object",
+          required: ["from", "to", "method", "duration"],
+          description: "一段交通衔接信息。",
+          properties: {
+            from: { type: "string", description: "起点。" },
+            to: { type: "string", description: "终点。" },
+            method: { type: "string", description: "交通方式（如飞机/高铁/打车/自驾）。" },
+            duration: { type: "string", description: "预计耗时。", example: "40 分钟" },
+          },
+          additionalProperties: true,
+        },
+        TravelGuideDayPlan: {
+          type: "object",
+          required: ["day", "schedule", "food", "hotel", "transport"],
+          description: "单日行程结构。",
+          properties: {
+            day: {
+              type: "integer",
+              description: "第几天（从 1 开始）。",
+              example: 1,
+            },
+            schedule: {
+              type: "array",
+              description: "当天分时段行程安排。",
+              items: { $ref: "#/components/schemas/TravelGuideScheduleItem" },
+            },
+            food: {
+              type: "array",
+              description: "当天餐饮推荐列表。",
+              items: { $ref: "#/components/schemas/TravelGuideFoodItem" },
+            },
+            hotel: {
+              $ref: "#/components/schemas/TravelGuideHotel",
+              description: "当天住宿建议。",
+            },
+            transport: {
+              type: "array",
+              description: "当天交通衔接路线。",
+              items: { $ref: "#/components/schemas/TravelGuideTransportItem" },
+            },
+          },
+          additionalProperties: true,
+        },
+        TravelGuideSummary: {
+          type: "object",
+          required: ["estimated_budget", "top3_must_visit", "tips", "alternatives"],
+          description: "整趟旅程总结信息。",
+          properties: {
+            estimated_budget: {
+              type: "string",
+              description: "总预算估算（可含人数和成本构成说明）。",
+            },
+            top3_must_visit: {
+              type: "array",
+              description: "必去 TOP3 推荐。",
+              items: { type: "string" },
+            },
+            tips: {
+              type: "array",
+              description: "实用建议与避坑提醒。",
+              items: { type: "string" },
+            },
+            alternatives: {
+              type: "array",
+              description: "备选方案（如下雨、人多等场景）。",
+              items: { type: "string" },
+            },
+          },
+          additionalProperties: true,
         },
         TravelGuideContent: {
           type: "object",
-          description:
-            "默认 system 要求：凡 1.2.3. / 1、2、/ 多分点并列处模型应直接输出 string[]。服务端 JSON.parse 后，对 `day_*` 五字段及根级 total_budget、top_3、avoid_tips、map_line、alternative_plan、rain_plan：若仍为含换行的 string，会按行拆成 string[]。",
+          required: ["destination", "days", "summary"],
+          description: "旅游攻略正文对象（目的地 + 每日计划 + 总结）。",
           properties: {
-            day_1: { $ref: "#/components/schemas/TravelGuideDay" },
-            day_2: { $ref: "#/components/schemas/TravelGuideDay" },
-            day_3: { $ref: "#/components/schemas/TravelGuideDay" },
-            total_budget: { $ref: "#/components/schemas/TravelGuideTextField" },
-            top_3: { $ref: "#/components/schemas/TravelGuideTextField" },
-            avoid_tips: { $ref: "#/components/schemas/TravelGuideTextField" },
-            map_line: { $ref: "#/components/schemas/TravelGuideTextField" },
-            alternative_plan: { $ref: "#/components/schemas/TravelGuideTextField" },
-            rain_plan: { $ref: "#/components/schemas/TravelGuideTextField" },
+            destination: {
+              type: "string",
+              description: "本次行程目的地。",
+              example: "万宁日月湾",
+            },
+            days: {
+              type: "array",
+              description: "按天拆分的行程数组。",
+              items: { $ref: "#/components/schemas/TravelGuideDayPlan" },
+            },
+            summary: {
+              $ref: "#/components/schemas/TravelGuideSummary",
+              description: "行程总结。",
+            },
           },
           additionalProperties: true,
         },
         TravelGuideResponse: {
           type: "object",
-          required: ["ok", "content"],
+          required: ["ok", "model", "requestParams", "content"],
           description:
-            "成功时 `ok` 为 true；`content` 为已解析的对象（非字符串）。默认 system 要求模型对分点内容直接输出 string[]；服务端另对 `day_*` 五字段及根级总结六字段中含换行的 string 做按行拆分（见 `TravelGuideTextField`）。",
+            "成功时 `ok` 为 true；`requestParams` 为从 `prompt` 解析出的请求参数；`content` 为结构化旅游攻略对象。",
           properties: {
             ok: { type: "boolean", example: true },
             model: {
@@ -564,32 +783,195 @@ const options: swaggerJsdoc.Options = {
               description: "本轮 Vector Engine 实际使用的模型名（未传 body `model` 时默认 qwen3.5-plus）",
               example: "qwen3.5-plus",
             },
-            content: { $ref: "#/components/schemas/TravelGuideContent" },
+            requestParams: {
+              $ref: "#/components/schemas/TravelGuidePromptParams",
+              description:
+                "从请求 `prompt` 中按分号分段、按 `键:值` 解析出的参数对象（7 个字段固定返回，缺失值为 null）。",
+            },
+            content: {
+              $ref: "#/components/schemas/TravelGuideContent",
+              description: "旅游攻略正文对象（destination + days + summary）。",
+            },
           },
           example: {
             ok: true,
             model: "qwen3.5-plus",
+            requestParams: {
+              departure: "上海",
+              destination: "日本京都",
+              travelDays: "3天2晚",
+              travelTime: "2026年5月",
+              travelers: "2人夫妻",
+              budget: "人均预算约4000元",
+              preferences: "美食、古建筑与轻松节奏",
+            },
             content: {
-              day_1: {
-                schedule: ["上午：伏见稻荷", "下午：清水寺周边", "晚上：祇园散步"],
-                attractions: ["伏见稻荷大社：千本鸟居… 建议 2 小时", "清水寺：… 建议 1.5 小时"],
-                restaurants: "XX 怀石料理：当季套餐… 人均约 800 元",
-                hotels: "XX 酒店：近祇园四条站… 约 900–1300 元/晚",
-                transportation: ["酒店 → 稻荷：JR 约 15 分钟", "稻荷 → 清水寺区域：…"],
+              destination: "万宁日月湾",
+              days: [
+                {
+                  day: 1,
+                  schedule: [
+                    {
+                      time: "morning",
+                      spot_name: "广州白云国际机场",
+                      description: "出发地集散枢纽，从顺德前往广州乘机",
+                      latitude: "23.3924",
+                      longitude: "113.2988",
+                      address: "广东省广州市白云区机场大道",
+                      recommended_duration: "2 小时",
+                      image_url: null,
+                    },
+                  ],
+                  food: [
+                    {
+                      restaurant_name: "216 Beach Bar & Restaurant",
+                      branch: "日月湾店",
+                      address: "海南省万宁市礼纪镇日月湾新区",
+                      avg_price: "150 元/人",
+                      recommended_dishes: ["汉堡", "意面", "热带果汁"],
+                      description: "日月湾知名冲浪文化餐厅，氛围轻松，适合晚餐",
+                      latitude: "18.7540",
+                      longitude: "110.5545",
+                      image_url: null,
+                    },
+                  ],
+                  hotel: {
+                    name: "万宁日月湾格罗姆冲浪酒店",
+                    address: "海南省万宁市礼纪镇日月湾新区",
+                    price_range: "800-1200 元/晚",
+                    reason: "位于湾区核心，冲浪氛围浓厚，交通便利",
+                    description: "本地知名冲浪主题酒店，适合年轻人和摄影爱好者",
+                    latitude: "18.7538",
+                    longitude: "110.5542",
+                    image_url: null,
+                  },
+                  transport: [
+                    {
+                      from: "顺德",
+                      to: "广州白云国际机场",
+                      method: "驾车/顺风车",
+                      duration: "1 小时",
+                    },
+                  ],
+                },
+              ],
+              summary: {
+                estimated_budget: "10000-12000 元（2 人，含机票、住宿、餐饮、交通）",
+                top3_must_visit: ["日月湾海滩（冲浪与日落）", "兴隆热带植物园（文化与自然）", "石梅湾（最美公路拍照）"],
+                tips: ["4 月海南紫外线较强，请做好防晒措施", "建议租车自驾，万宁景点间公共交通不便"],
+                alternatives: ["若遇下雨：改为参观兴隆咖啡谷室内展馆或前往万宁市区商场"],
               },
-              day_2: {
-                schedule: "上午：岚山 下午：金阁寺 晚上：回四条河原町",
-                attractions: "岚山竹林与渡月桥…；金阁寺…",
-                restaurants: "汤豆腐名店 XX：… 人均约 200 元",
-                hotels: "（同 day_1）",
-                transportation: "市区 ↔ 岚山：阪急/岚电约 40 分钟",
-              },
-              total_budget: ["机酒合计约 9000 元", "餐饮门票约 2000–4000 元"],
-              top_3: ["清水寺", "岚山", "伏见稻荷大社"],
-              avoid_tips: ["热门景点尽量早到", "部分餐厅需预约"],
-              map_line: ["D1 偏东山", "D2 西北郊+市中心购物"],
-              alternative_plan: ["若岚山小火车售罄可改游船"],
-              rain_plan: ["雨天改室内：京都国立博物馆、商场"],
+            },
+          },
+        },
+        TravelStrategyPlanSavedItem: {
+          type: "object",
+          required: ["id", "content", "createdAt", "updatedAt"],
+          description: "已保存的旅游策略方案记录。",
+          properties: {
+            id: {
+              type: "string",
+              description: "方案主键 ID（cuid）",
+              example: "cmc123abc0001xyz987pq",
+            },
+            content: {
+              $ref: "#/components/schemas/TravelGuideContent",
+              description: "方案 JSON 正文（与旅游攻略 `content` 结构一致）。",
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              description: "创建时间（ISO 8601）。数据库为 TIMESTAMPTZ（UTC 瞬间）。",
+            },
+            updatedAt: {
+              type: "string",
+              format: "date-time",
+              description: "最近更新时间（ISO 8601）。数据库为 TIMESTAMPTZ（UTC 瞬间）。",
+            },
+          },
+        },
+        TravelStrategyPlanSaveResponse: {
+          type: "object",
+          required: ["ok", "id", "createdAt"],
+          description: "旅游策略方案保存成功响应。",
+          properties: {
+            ok: {
+              type: "boolean",
+              example: true,
+              description: "保存成功标记，恒为 true。",
+            },
+            id: {
+              type: "string",
+              description: "新生成的方案 ID（cuid）。",
+              example: "cmc123abc0001xyz987pq",
+            },
+            createdAt: {
+              type: "string",
+              format: "date-time",
+              description: "创建时间（ISO 8601）。",
+            },
+          },
+        },
+        TravelStrategyPlanListResponse: {
+          type: "object",
+          required: ["ok", "page", "pageSize", "total", "totalPages", "items"],
+          description: "当前登录用户的旅游策略方案分页列表（按创建时间倒序）。",
+          properties: {
+            ok: { type: "boolean", example: true },
+            page: {
+              type: "integer",
+              description: "当前页码（从 1 开始）。",
+              example: 1,
+            },
+            pageSize: {
+              type: "integer",
+              description: "当前页大小（服务端最大 50）。",
+              example: 10,
+            },
+            total: {
+              type: "integer",
+              description: "当前用户全部方案总数。",
+              example: 36,
+            },
+            totalPages: {
+              type: "integer",
+              description: "总页数（最小返回 1）。",
+              example: 4,
+            },
+            items: {
+              type: "array",
+              description: "当前页方案列表。",
+              items: { $ref: "#/components/schemas/TravelStrategyPlanSavedItem" },
+            },
+          },
+        },
+        TravelStrategyPlanDetailResponse: {
+          type: "object",
+          required: ["ok", "plan"],
+          description: "当前登录用户的一条旅游策略方案详情。",
+          properties: {
+            ok: { type: "boolean", example: true },
+            plan: {
+              $ref: "#/components/schemas/TravelStrategyPlanSavedItem",
+              description: "方案详情。",
+            },
+          },
+        },
+        TravelStrategyPlanDeleteResponse: {
+          type: "object",
+          required: ["ok", "deleted", "id"],
+          description: "删除旅游策略方案成功响应。",
+          properties: {
+            ok: { type: "boolean", example: true },
+            deleted: {
+              type: "boolean",
+              example: true,
+              description: "恒为 true，表示本次已删除。",
+            },
+            id: {
+              type: "string",
+              description: "被删除的方案 ID。",
+              example: "cmc123abc0001xyz987pq",
             },
           },
         },

@@ -15,6 +15,7 @@ model User {
   avatarUrl String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  travelStrategyPlans TravelStrategyPlan[]
 
   @@index([openid])
 }
@@ -44,5 +45,19 @@ model BasketballPredictionCache {
   updatedAt  DateTime @updatedAt @db.Timestamptz(3)
 
   @@index([promptHash])
+  @@index([createdAt])
+}
+
+model TravelStrategyPlan {
+  id        String   @id @default(cuid())
+  userId    String
+  /// 攻略原始 JSON 内容（通常来自 `POST /api/ai/travel-guide` 的 `content`）
+  content   Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
   @@index([createdAt])
 }
