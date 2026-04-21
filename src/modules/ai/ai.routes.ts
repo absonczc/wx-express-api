@@ -1,9 +1,13 @@
 import { Router } from "express";
 import { authRequired } from "../../middleware/auth.middleware.js";
+import { uploadImageMemory } from "../../lib/upload.js";
 import { asyncHandler } from "../../utils/asyncHandler.js";
 import {
   postAiChat,
   postAiPrompt,
+  postAiXhsGrassFromImage,
+  postAiEcommerceSeedreamAnalyze,
+  postAiEcommerceSeedreamGenerate,
   postFootballPrediction,
   postBasketballPrediction,
   postTravelGuide,
@@ -17,6 +21,22 @@ import {
 } from "./ai.controller.js";
 
 export const aiRouter = Router();
+
+/** 嵌套路径：`/api/ai/ecommerce/seedream/analyze`、`/api/ai/ecommerce/seedream/generate` */
+const ecommerceSeedreamRouter = Router();
+ecommerceSeedreamRouter.post(
+  "/analyze",
+  authRequired,
+  uploadImageMemory.single("image"),
+  asyncHandler(postAiEcommerceSeedreamAnalyze)
+);
+ecommerceSeedreamRouter.post(
+  "/generate",
+  authRequired,
+  uploadImageMemory.single("image"),
+  asyncHandler(postAiEcommerceSeedreamGenerate)
+);
+aiRouter.use("/ecommerce/seedream", ecommerceSeedreamRouter);
 
 /**
  * @swagger
@@ -81,6 +101,242 @@ aiRouter.post("/chat", authRequired, asyncHandler(postAiChat));
  *         description: 未配置 VECTOR_ENGINE_API_KEY
  */
 aiRouter.post("/prompt", authRequired, asyncHandler(postAiPrompt));
+
+/**
+ * @swagger
+ * /api/ai/xhs-grass-from-image:
+ *   post:
+ *     summary: 小红书种草图生文（豆包多模态 + 固定提示词）
+ *     description: |
+ *       使用 **multipart/form-data** 上传一张图片，服务端将图片与内置「小红书种草博主」提示词一并发给 Vector Engine（OpenAI 兼容 Chat Completions 多模态消息）。
+ *
+ *       **模型**：默认 **`doubao-seed-1-6-flash-250828`**，与 `TRAVEL_GUIDE_VECTOR_ENGINE_MODEL` 等独立；可通过环境变量 `XHS_GRASS_VECTOR_ENGINE_MODEL` 覆盖（须与控制台模型 ID 一致）。
+ *
+ *       **鉴权**：须携带 Bearer；须配置 `VECTOR_ENGINE_API_KEY`。
+ *
+ *       **超时**：默认单次上游请求 120 秒（`XHS_GRASS_VECTOR_ENGINE_TIMEOUT_MS`，最小 30000）。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [image]
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *                 description: |
+ *                   待分析的商品或场景照片。字段名必须为 **image**。
+ *                   允许 MIME：`image/jpeg`、`image/png`、`image/gif`、`image/webp`；单文件最大 **5MB**（与 `uploadImageMemory` 一致）。
+ *     responses:
+ *       200:
+ *         description: 成功；`content` 为模型生成的小红书风格文案（标题、正文、标签等按提示词结构输出）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AiXhsGrassFromImageResponse'
+ *       400:
+ *         description: 未上传 `image`、文件为空或字段名错误
+ *       401:
+ *         description: 未登录或 token 无效
+ *       502:
+ *         description: Vector Engine 错误或返回空内容
+ *       503:
+ *         description: 未配置 VECTOR_ENGINE_API_KEY
+ */
+aiRouter.post(
+  "/xhs-grass-from-image",
+  authRequired,
+  uploadImageMemory.single("image"),
+  asyncHandler(postAiXhsGrassFromImage)
+);
+
+/**
+ * @swagger
+ * /api/ai/ecommerce/seedream/analyze:
+ *   post:
+ *     summary: 电商图 → 三套 Seedream 5.0 提示词（仅阶段一分析）
+ *     description: |
+ *       `multipart/form-data` 上传 **image**，调用 Chat Completions 多模态（默认 **`doubao-seed-1-6-flash-250828`**，`ECOMMERCE_VISUAL_ANALYST_MODEL` 可覆盖），返回模型原始 Markdown **`content`** 及服务端解析的 **`schemes`**（三套的正向/负向便于前端展示与自选）。
+ *
+ *       出图请另调 **`POST /api/ai/ecommerce/seedream/generate`**，传入自选方案拼好的 **`prompt`** 与同一张或另一张参考 **image**。
+ *
+ *       超时默认 120s：`ECOMMERCE_VISUAL_ANALYST_TIMEOUT_MS`（≥30000）。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [image]
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *                 description: 商品/场景参考图；字段名 **image**。MIME：jpeg/png/gif/webp；最大 **5MB**。
+ *     responses:
+ *       200:
+ *         description: 成功；见 `AiEcommerceSeedreamAnalyzeResponse`
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AiEcommerceSeedreamAnalyzeResponse'
+ *       400:
+ *         description: 未上传或非法图片字段
+ *       401:
+ *         description: 未鉴权
+ *       502:
+ *         description: 上游 Chat 失败或返回空正文
+ *       503:
+ *         description: 未配置 VECTOR_ENGINE_API_KEY
+ */
+/**
+ * @swagger
+ * /api/ai/ecommerce-seedream-analyze:
+ *   post:
+ *     summary: 电商 Seedream 阶段一（别名，与 `/ecommerce/seedream/analyze` 相同）
+ *     tags: [AI]
+ *     deprecated: true
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [image]
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AiEcommerceSeedreamAnalyzeResponse'
+ */
+aiRouter.post(
+  "/ecommerce-seedream-analyze",
+  authRequired,
+  uploadImageMemory.single("image"),
+  asyncHandler(postAiEcommerceSeedreamAnalyze)
+);
+
+/**
+ * @swagger
+ * /api/ai/ecommerce/seedream/generate:
+ *   post:
+ *     summary: 即梦 Seedream 出图（仅阶段二 images/generations）
+ *     description: |
+ *       `multipart/form-data`：**image**（参考图，data URL 由服务端代拼）、**prompt**（必填，完整生图提示词，一般由阶段一 `schemes` 中某套 `positive`/`negative` 按与 `formatSeedreamGenerationPrompt` 相同规则拼接）。
+ *
+ *       可选 **watermark**：`true`/`false`/`1`/`0`/`yes`（默认 **false**）。可选 **model** 覆盖默认 **`doubao-seedream-5-0-260128`**（`SEEDREAM_5_VECTOR_ENGINE_MODEL`）。
+ *
+ *       可选 **size**：输出尺寸字符串（默认 **`2048x2048`**，写入上游 `body.size`）。可选 **n**：生成张数，**1～10** 的整数（默认 **3**，写入上游 `body.n`）；`multipart` 中通常以数字字符串传递。
+ *
+ *       请求体发往 **`POST {VECTOR_ENGINE_BASE_URL}/images/generations`**；参考图字段默认 **`images`: [dataUrl]**，设 **`SEEDREAM5_REFERENCE_AS_IMAGES_ARRAY_ONLY=false`** 则改为单字段 **`image`**。
+ *
+ *       超时默认 300s：`SEEDREAM_5_VECTOR_ENGINE_TIMEOUT_MS`（≥60000）。
+ *     tags: [AI]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [image, prompt]
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *                 description: 参考图；字段名 **image**。MIME：jpeg/png/gif/webp；最大 **5MB**。
+ *               prompt:
+ *                 type: string
+ *                 description: 即梦生图完整提示词（非空）。
+ *               watermark:
+ *                 type: string
+ *                 description: 可选。是否加水印；默认 false。传 `true`/`1`/`yes` 为开启，其余为关闭。
+ *               model:
+ *                 type: string
+ *                 description: 可选。覆盖默认出图模型 ID（默认 doubao-seedream-5-0-260128）。
+ *               size:
+ *                 type: string
+ *                 description: 可选。上游生图尺寸（如 2048x2048）；默认 2048x2048。
+ *               n:
+ *                 type: string
+ *                 description: 可选。生成张数，1～10 的整数（multipart 多为字符串）；默认 3。
+ *     responses:
+ *       200:
+ *         description: 成功；`seedream` 为上游 JSON（常见含 data[].url）
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AiEcommerceSeedreamGenerateResponse'
+ *       400:
+ *         description: 缺少 image 或 prompt
+ *       401:
+ *         description: 未鉴权
+ *       502:
+ *         description: 上游 images/generations 失败
+ *       503:
+ *         description: 未配置 VECTOR_ENGINE_API_KEY
+ */
+/**
+ * @swagger
+ * /api/ai/ecommerce-seedream-generate:
+ *   post:
+ *     summary: 即梦 Seedream 阶段二（别名，与 `/ecommerce/seedream/generate` 相同）
+ *     tags: [AI]
+ *     deprecated: true
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             required: [image, prompt]
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *               prompt:
+ *                 type: string
+ *               watermark:
+ *                 type: string
+ *               model:
+ *                 type: string
+ *               size:
+ *                 type: string
+ *                 description: 可选。默认 2048x2048。
+ *               n:
+ *                 type: string
+ *                 description: 可选。1～10，默认 3。
+ *     responses:
+ *       200:
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/AiEcommerceSeedreamGenerateResponse'
+ */
+aiRouter.post(
+  "/ecommerce-seedream-generate",
+  authRequired,
+  uploadImageMemory.single("image"),
+  asyncHandler(postAiEcommerceSeedreamGenerate)
+);
 
 /**
  * @swagger

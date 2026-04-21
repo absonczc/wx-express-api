@@ -73,6 +73,54 @@ export const env = {
   })(),
   /** 旅游攻略：未传 body `model` 时使用；默认 `qwen3.5-plus`（与控制台模型广场 ID 一致；定价页关键词 Qwen3.5-Plus：https://api.vectorengine.ai/pricing?keyword=Qwen3.5-Plus ） */
   travelGuideVectorEngineModel: process.env.TRAVEL_GUIDE_VECTOR_ENGINE_MODEL?.trim() ?? "qwen3.5-plus",
+  /**
+   * 小红书图生文种草：`POST /api/ai/xhs-grass-from-image` 固定调用的模型 ID（豆包多模态等以控制台为准）。
+   * 可用 `XHS_GRASS_VECTOR_ENGINE_MODEL` 覆盖。
+   */
+  xhsGrassVectorEngineModel: process.env.XHS_GRASS_VECTOR_ENGINE_MODEL?.trim() ?? "doubao-seed-1-6-flash-250828",
+  /** 小红书图生文：Vector Engine `fetch` 超时（毫秒），默认 120 秒 */
+  xhsGrassVectorEngineTimeoutMs: (() => {
+    const raw = process.env.XHS_GRASS_VECTOR_ENGINE_TIMEOUT_MS?.trim();
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 30_000) {
+        return Math.floor(n);
+      }
+    }
+    return 120_000;
+  })(),
+  /**
+   * 电商 Seedream 链路第一步（多模态写提示词）：默认与小红书图生文同款 `doubao-seed-1-6-flash-250828`；
+   * 可用 `ECOMMERCE_VISUAL_ANALYST_MODEL` 覆盖。
+   */
+  ecommerceVisualAnalystModel: process.env.ECOMMERCE_VISUAL_ANALYST_MODEL?.trim() ?? "doubao-seed-1-6-flash-250828",
+  ecommerceVisualAnalystTimeoutMs: (() => {
+    const raw = process.env.ECOMMERCE_VISUAL_ANALYST_TIMEOUT_MS?.trim();
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 30_000) {
+        return Math.floor(n);
+      }
+    }
+    return 120_000;
+  })(),
+  /** 电商 Seedream 第二步：`POST /v1/images/generations` 使用的模型 ID */
+  seedream50VectorEngineModel: process.env.SEEDREAM_5_VECTOR_ENGINE_MODEL?.trim() ?? "doubao-seedream-5-0-260128",
+  seedream50VectorEngineTimeoutMs: (() => {
+    const raw = process.env.SEEDREAM_5_VECTOR_ENGINE_TIMEOUT_MS?.trim();
+    if (raw) {
+      const n = Number(raw);
+      if (Number.isFinite(n) && n >= 60_000) {
+        return Math.floor(n);
+      }
+    }
+    return 300_000;
+  })(),
+  /**
+   * 为 true 时第二步请求体只带 `images: string[]`，不带单图 `image`（默认 true，与业务「images 字段」一致）；
+   * 设 `SEEDREAM5_REFERENCE_AS_IMAGES_ARRAY_ONLY=false` 则改为仅发单图字段 `image`（向量引擎 Apifox 常见写法）。
+   */
+  seedream5ReferenceAsImagesArrayOnly: process.env.SEEDREAM5_REFERENCE_AS_IMAGES_ARRAY_ONLY?.trim() !== "false",
   /** 足/篮预测定时预热：默认开启；设为 `false` 时不启动定时任务 */
   predictionScheduleEnabled: process.env.PREDICTION_SCHEDULE_ENABLED?.trim() !== "false",
   /** 足/篮预测定时预热间隔（毫秒），默认 6 小时；最小 60 秒 */

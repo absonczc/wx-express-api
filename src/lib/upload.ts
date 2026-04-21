@@ -37,3 +37,22 @@ export const upload = multer({
     fileSize: 1024 * 1024 * 5 // 5MB 限制
   }
 });
+
+const allowedImageTypesMemory = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
+
+const fileFilterMemory = (req: unknown, file: { mimetype: string }, cb: multer.FileFilterCallback) => {
+  if (allowedImageTypesMemory.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error("只允许上传图片文件 (JPEG, JPG, PNG, GIF, WEBP)"));
+  }
+};
+
+/** 内存存储，适合 AI 图生文等不落盘场景；单文件最大 5MB */
+export const uploadImageMemory = multer({
+  storage: multer.memoryStorage(),
+  fileFilter: fileFilterMemory,
+  limits: {
+    fileSize: 1024 * 1024 * 5,
+  },
+});

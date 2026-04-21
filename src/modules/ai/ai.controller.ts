@@ -9,7 +9,10 @@ import {
   getTravelGuideJobForUser,
   startTravelGuideJob,
 } from "./travel-guide-async.service.js";
-import { vectorEngineChat } from "./vectorengine.service.js";
+import { vectorEngineChat, vectorEngineImageGenerations } from "./vectorengine.service.js";
+import { parseEcommerceSeedreamSchemes } from "./seedream-ecommerce-scheme-parser.js";
+import { SEEDREAM_ECOMMERCE_ANALYST_USER_PROMPT } from "./seedream-ecommerce-analyst-prompt.js";
+import { XHS_GRASS_COPY_USER_PROMPT } from "./xhs-grass-prompt.js";
 
 const roles = new Set(["system", "user", "assistant"]);
 
@@ -646,6 +649,165 @@ export async function postTravelGuideJobCancel(req: Request, res: Response): Pro
     throw new HttpError(409, "Job is not pending", { status: result.status });
   }
   res.json({ ok: true, cancelled: true });
+}
+
+/**
+ * 小红书种草：上传一张商品/场景图，使用固定提示词 + 多模态模型生成文案。
+ * 模型默认 `doubao-seed-1-6-flash-250828`（见 `env.xhsGrassVectorEngineModel`）。
+ */
+export async function postAiXhsGrassFromImage(req: Request, res: Response): Promise<void> {
+  const file = req.file;
+  if (!file?.buffer?.length) {
+    throw new HttpError(
+      400,
+      "请使用 multipart/form-data 上传图片字段 image（支持 JPEG/PNG/GIF/WEBP，单文件最大 5MB）"
+    );
+  }
+
+  const dataUrl = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+  const model = env.xhsGrassVectorEngineModel;
+
+  const { content, model: usedModel } = await vectorEngineChat({
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: XHS_GRASS_COPY_USER_PROMPT },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+      },
+    ],
+    model,
+    timeoutMs: env.xhsGrassVectorEngineTimeoutMs,
+    networkRetries: 2,
+  });
+
+  res.json({
+    ok: true,
+    model: usedModel,
+    content,
+  });
+}
+
+/**
+ * 电商视觉阶段一：多模态分析图并生成 3 套 Seedream 5.0 用提示词（Markdown）。
+ * 阶段二出图请调用 `POST /api/ai/ecommerce/seedream/generate`。
+ */
+export async function postAiEcommerceSeedreamAnalyze(req: Request, res: Response): Promise<void> {
+  const file = req.file;
+  if (!file?.buffer?.length) {
+    throw new HttpError(
+      400,
+      "请使用 multipart/form-data 上传图片字段 image（支持 JPEG/PNG/GIF/WEBP，单文件最大 5MB）"
+    );
+  }
+
+  const dataUrl = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+  const analystModel = env.ecommerceVisualAnalystModel;
+
+  const { content, model: usedModel } = await vectorEngineChat({
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: SEEDREAM_ECOMMERCE_ANALYST_USER_PROMPT },
+          { type: "image_url", image_url: { url: dataUrl } },
+        ],
+      },
+    ],
+    model: analystModel,
+    timeoutMs: env.ecommerceVisualAnalystTimeoutMs,
+    networkRetries: 2,
+  });
+
+  const schemes = parseEcommerceSeedreamSchemes(content);
+
+  res.json({
+    ok: true,
+    model: usedModel,
+    content,
+    schemes,
+  });
+}
+
+const SEEDREAM_GENERATE_DEFAULT_SIZE = "2048x2048";
+const SEEDREAM_GENERATE_DEFAULT_N = 3;
+
+function parseSeedreamGenerateSize(raw: unknown): string {
+  if (raw === undefined || raw === "") {
+    return SEEDREAM_GENERATE_DEFAULT_SIZE;
+  }
+  if (typeof raw !== "string" || !raw.trim()) {
+    throw new HttpError(400, "multipart 字段 size 须为非空字符串（默认 2048x2048）");
+  }
+  return raw.trim();
+}
+
+function parseSeedreamGenerateN(raw: unknown): number {
+  if (raw === undefined || raw === "") {
+    return SEEDREAM_GENERATE_DEFAULT_N;
+  }
+  const num = typeof raw === "number" ? raw : Number(String(raw).trim());
+  if (!Number.isFinite(num) || !Number.isInteger(num) || num < 1 || num > 10) {
+    throw new HttpError(400, "multipart 字段 n 须为 1～10 的整数（默认 3）");
+  }
+  return num;
+}
+
+/** 电商视觉阶段二：即梦 Seedream `images/generations`（参考图 + prompt，可选 watermark / model / size / n） */
+export async function postAiEcommerceSeedreamGenerate(req: Request, res: Response): Promise<void> {
+  const file = req.file;
+  if (!file?.buffer?.length) {
+    throw new HttpError(
+      400,
+      "请使用 multipart/form-data 上传图片字段 image（支持 JPEG/PNG/GIF/WEBP，单文件最大 5MB）"
+    );
+  }
+
+  const body = req.body as Record<string, unknown>;
+  const promptRaw = body.prompt;
+  if (typeof promptRaw !== "string" || !promptRaw.trim()) {
+    throw new HttpError(
+      400,
+      "multipart 文本字段 prompt 必填且非空（即梦生图完整提示词，通常由阶段一某套方案的正向与负面提示词按约定拼接）"
+    );
+  }
+  const prompt = promptRaw.trim();
+
+  let watermark = false;
+  if (body.watermark !== undefined && body.watermark !== "") {
+    const w = String(body.watermark).trim().toLowerCase();
+    watermark = w === "true" || w === "1" || w === "yes";
+  }
+
+  const modelOverride =
+    typeof body.model === "string" && body.model.trim() ? body.model.trim() : undefined;
+  const imageModel = modelOverride ?? env.seedream50VectorEngineModel;
+
+  const size = parseSeedreamGenerateSize(body.size);
+  const n = parseSeedreamGenerateN(body.n);
+
+  const dataUrl = `data:${file.mimetype};base64,${file.buffer.toString("base64")}`;
+
+  const { raw } = await vectorEngineImageGenerations({
+    model: imageModel,
+    prompt,
+    referenceDataUrls: [dataUrl],
+    watermark,
+    size,
+    n,
+    referenceAsImagesArrayOnly: env.seedream5ReferenceAsImagesArrayOnly,
+    timeoutMs: env.seedream50VectorEngineTimeoutMs,
+    networkRetries: 2,
+  });
+
+  res.json({
+    ok: true,
+    model: imageModel,
+    size,
+    n,
+    seedream: raw,
+  });
 }
 
 /** 单轮对话：前端只需传 prompt（可选 system / model） */

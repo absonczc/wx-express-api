@@ -477,6 +477,91 @@ const options: swaggerJsdoc.Options = {
             content: { type: "string", description: "模型生成的文本内容" },
           },
         },
+        AiXhsGrassFromImageResponse: {
+          type: "object",
+          description: "图生种草文案：正文为 Markdown 风格分段（标题、正文、标签），结构由服务端固定提示词约束。",
+          properties: {
+            ok: { type: "boolean", example: true, description: "请求是否成功处理" },
+            model: {
+              type: "string",
+              description:
+                "本次实际调用的模型 ID；默认 `doubao-seed-1-6-flash-250828`，可被环境变量 `XHS_GRASS_VECTOR_ENGINE_MODEL` 覆盖。",
+              example: "doubao-seed-1-6-flash-250828",
+            },
+            content: {
+              type: "string",
+              description:
+                "模型输出全文。按内置提示词应包含：**标题**（1–2 个）、**正文**（约 300 字、3–4 段）、**标签**（5–8 个以 # 开头）。具体排版由模型生成，客户端可直接展示或再解析。",
+            },
+          },
+        },
+        ParsedEcommerceSeedreamScheme: {
+          type: "object",
+          description: "从阶段一 Markdown 中解析出的单套方案（用于阶段二出图 prompt 拼接）。",
+          properties: {
+            schemeIndex: {
+              type: "integer",
+              enum: [1, 2, 3],
+              description: "方案序号：1=生活场景，2=极简陈列室，3=小红书氛围",
+            },
+            headingSnippet: {
+              type: "string",
+              description: "方案标题行摘要（便于展示），取自正文首行或方案标记附近。",
+            },
+            positive: { type: "string", description: "正向生图提示词（从 Markdown 代码块解析）。" },
+            negative: { type: "string", description: "负面/反向提示词（从对应代码块解析；可能为空）。" },
+          },
+        },
+        AiEcommerceSeedreamAnalyzeResponse: {
+          type: "object",
+          description: "电商阶段一：分析图并输出三套 Seedream 提示词（原始 Markdown 正文 + 解析结果）。",
+          properties: {
+            ok: { type: "boolean", example: true, description: "请求成功完成时为 true。" },
+            model: {
+              type: "string",
+              description:
+                "本次 Chat 多模态实际使用的模型 ID（默认 `doubao-seed-1-6-flash-250828`，`ECOMMERCE_VISUAL_ANALYST_MODEL` 可覆盖）。",
+            },
+            content: {
+              type: "string",
+              description: "模型返回的完整 Markdown 正文（含三套方案与 fenced 代码块）。",
+            },
+            schemes: {
+              type: "array",
+              description:
+                "服务端从 `content` 解析出的三套方案（schemeIndex、headingSnippet、positive、negative）。解析失败时可能为空数组；前端仍可仅用 `content` 自行解析。",
+              items: { $ref: "#/components/schemas/ParsedEcommerceSeedreamScheme" },
+            },
+          },
+        },
+        AiEcommerceSeedreamGenerateResponse: {
+          type: "object",
+          description: "电商阶段二：即梦 images/generations 上游响应包装。",
+          properties: {
+            ok: { type: "boolean", example: true, description: "上游返回 2xx 且本服务处理完成时为 true。" },
+            model: {
+              type: "string",
+              description: "本次请求 `images/generations` 的 body.model（默认 `doubao-seedream-5-0-260128`，multipart `model` 或 `SEEDREAM_5_VECTOR_ENGINE_MODEL` 可覆盖）。",
+            },
+            size: {
+              type: "string",
+              example: "2048x2048",
+              description: "本次发往上游的 `body.size`（默认 `2048x2048`，multipart `size` 可覆盖）。",
+            },
+            n: {
+              type: "integer",
+              example: 3,
+              minimum: 1,
+              maximum: 10,
+              description: "本次发往上游的 `body.n` 生成张数（默认 **3**，multipart `n` 可覆盖；合法范围 1～10）。",
+            },
+            seedream: {
+              type: "object",
+              additionalProperties: true,
+              description: "向量引擎/豆包返回的 JSON 原样（常见含 created、data[].url 等）。",
+            },
+          },
+        },
         TravelGuideRequest: {
           type: "object",
           required: ["prompt"],
